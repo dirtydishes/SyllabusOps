@@ -393,7 +393,10 @@
 
 .editor-grid {
   display: grid;
-  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr) minmax(260px, 360px);
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr) minmax(
+      220px,
+      320px
+    );
   gap: 14px;
   align-items: start;
 }
@@ -473,7 +476,7 @@
 .split {
   margin-top: 12px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
 
@@ -492,6 +495,20 @@
   padding: 12px;
   overflow: auto;
   max-height: 70vh;
+  position: relative;
+}
+
+.editor-edit-fab {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 8px 10px;
+  background: rgba(49, 50, 68, 0.75);
+  backdrop-filter: blur(8px);
+}
+
+.editor-edit-fab:hover {
+  border-color: rgba(180, 190, 254, 0.55);
 }
 
 .pane.preview :is(p, li) {
@@ -501,6 +518,15 @@
 
 .pane.preview pre {
   white-space: pre-wrap;
+}
+
+.editor-page .cm-editor,
+.editor-page .cm-scroller {
+  max-width: 100%;
+}
+
+.editor-page .cm-scroller {
+  overflow-x: hidden;
 }
 
 .pane.preview :is(h1, h2, h3) {
@@ -543,6 +569,15 @@
 
 .revision-row .button {
   width: fit-content;
+}
+
+@media (max-width: 1320px) {
+  .editor-grid {
+    grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  }
+  .revisions {
+    height: auto;
+  }
 }
 
 @media (max-width: 1150px) {

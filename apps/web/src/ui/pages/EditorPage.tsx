@@ -1,10 +1,10 @@
 import { markdown } from "@codemirror/lang-markdown";
 import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { useSearchParams } from "react-router-dom";
+import remarkGfm from "remark-gfm";
 import {
   type FsEntry,
   type FsRevision,
@@ -19,6 +19,17 @@ function joinPath(a: string, b: string): string {
   if (!a) return b;
   if (!b) return a;
   return `${a.replace(/\/+$/g, "")}/${b.replace(/^\/+/g, "")}`;
+}
+
+function isMarkdownPath(relPath: string): boolean {
+  return relPath.toLowerCase().endsWith(".md");
+}
+
+function isSummaryMarkdown(relPath: string): boolean {
+  const p = relPath.replaceAll("\\", "/").toLowerCase();
+  if (!p.endsWith(".md")) return false;
+  if (!p.includes("/generated/")) return false;
+  return p.includes("summary");
 }
 
 export function EditorPage() {
@@ -53,15 +64,20 @@ export function EditorPage() {
     };
   }, [cwd]);
 
-  async function openFile(relPath: string) {
+  const openFile = useCallback(async (relPath: string) => {
     setError(null);
     setStatus("Reading…");
-    let finalStatus: string = "Idle";
+    let finalStatus = "Idle";
     try {
       const r = await fsRead(relPath);
       setSelectedPath(relPath);
       setContent(r.content);
       setLoadedSha(r.sha256);
+      setMode((current) => {
+        if (isSummaryMarkdown(relPath)) return "preview";
+        if (isMarkdownPath(relPath) && current === "preview") return "split";
+        return current;
+      });
       const rev = await fsRevisions(relPath);
       setRevisions(rev.revisions);
     } catch (e: unknown) {
@@ -71,6 +87,9 @@ export function EditorPage() {
         setContent("");
         setLoadedSha(undefined);
         setRevisions([]);
+        setMode((current) =>
+          isSummaryMarkdown(relPath) ? "preview" : current
+        );
         finalStatus = "New file";
       } else {
         setError(msg);
@@ -78,7 +97,7 @@ export function EditorPage() {
     } finally {
       setStatus(finalStatus);
     }
-  }
+  }, []);
 
   async function saveFile() {
     if (!selectedPath) return;
@@ -122,15 +141,18 @@ export function EditorPage() {
     [cwd]
   );
 
+  const selectedIsSummary = useMemo(
+    () => (selectedPath ? isSummaryMarkdown(selectedPath) : false),
+    [selectedPath]
+  );
+
   useEffect(() => {
     const p = searchParams.get("path");
     if (!p) return;
     const dir = p.split("/").slice(0, -1).join("/");
     setCwd(dir);
     void openFile(p);
-    // only run on mount; searchParams identity is stable but may change on navigation
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [openFile, searchParams]);
 
   return (
     <div className="page editor-page">
@@ -198,33 +220,45 @@ export function EditorPage() {
               {selectedPath ?? "(no file selected)"}
             </div>
             <div className="row">
-              <div className="segmented">
-                <button
-                  type="button"
-                  className={mode === "edit" ? "seg active" : "seg"}
-                  onClick={() => setMode("edit")}
-                >
-                  Edit
-                </button>
-                <button
-                  type="button"
-                  className={mode === "preview" ? "seg active" : "seg"}
-                  onClick={() => setMode("preview")}
-                >
-                  Preview
-                </button>
-                <button
-                  type="button"
-                  className={mode === "split" ? "seg active" : "seg"}
-                  onClick={() => setMode("split")}
-                >
-                  Split
-                </button>
-              </div>
+              {selectedIsSummary ? (
+                mode === "edit" ? (
+                  <button
+                    type="button"
+                    className="button"
+                    onClick={() => setMode("preview")}
+                  >
+                    Preview
+                  </button>
+                ) : null
+              ) : (
+                <div className="segmented">
+                  <button
+                    type="button"
+                    className={mode === "edit" ? "seg active" : "seg"}
+                    onClick={() => setMode("edit")}
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    className={mode === "preview" ? "seg active" : "seg"}
+                    onClick={() => setMode("preview")}
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    className={mode === "split" ? "seg active" : "seg"}
+                    onClick={() => setMode("split")}
+                  >
+                    Split
+                  </button>
+                </div>
+              )}
               <button
                 type="button"
                 className="button primary"
-                disabled={!selectedPath || status !== "Idle"}
+                disabled={!selectedPath || status !== "Idle" || mode !== "edit"}
                 onClick={() => void saveFile()}
               >
                 Save
