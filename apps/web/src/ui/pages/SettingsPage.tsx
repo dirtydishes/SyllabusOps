@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { type Settings, getSettings, saveSettings } from "../lib/api";
+import { useEffect, useMemo, useState } from "react";
+import { type Settings, getOpenAiModels, getSettings, saveSettings } from "../lib/api";
 import {
   type CodexStatus,
   codexLogout,
@@ -24,6 +24,9 @@ export function SettingsPage() {
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [modelsBusy, setModelsBusy] = useState(false);
+  const [openAiModels, setOpenAiModels] = useState<string[]>([]);
+  const [openAiModelsError, setOpenAiModelsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -160,6 +163,26 @@ export function SettingsPage() {
     }
   }
 
+  async function loadModels() {
+    setOpenAiModelsError(null);
+    setModelsBusy(true);
+    try {
+      const r = await getOpenAiModels();
+      setOpenAiModels(r.models);
+    } catch (e: unknown) {
+      setOpenAiModelsError(String((e as Error)?.message ?? e));
+    } finally {
+      setModelsBusy(false);
+    }
+  }
+
+  const reasoningEffort = value?.openaiReasoningEffort ?? "";
+  const modelOptions = useMemo(() => {
+    const set = new Set(openAiModels);
+    if (value?.openaiModel) set.add(value.openaiModel);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [openAiModels, value?.openaiModel]);
+
   return (
     <div className="page">
       <div className="page-header">
@@ -255,6 +278,28 @@ export function SettingsPage() {
             <option value="codex">Codex (ChatGPT auth)</option>
             <option value="openai">OpenAI API</option>
           </select>
+        </div>
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="llmMaxOutputTokens">Max output tokens</label>
+          <input
+            id="llmMaxOutputTokens"
+            className="input mono"
+            type="number"
+            min={256}
+            max={8000}
+            value={value?.llmMaxOutputTokens ?? 1200}
+            onChange={(e) =>
+              setValue((v) =>
+                v
+                  ? { ...v, llmMaxOutputTokens: Number(e.target.value || "1200") }
+                  : v
+              )
+            }
+          />
+          <div className="muted" style={{ marginTop: 6 }}>
+            Used for JSON-schema jobs (tasks/summaries). Higher = slower/more expensive.
+          </div>
         </div>
       </div>
 
@@ -357,15 +402,66 @@ export function SettingsPage() {
 
         <div className="field">
           <label htmlFor="openaiModel">Model</label>
-          <input
-            id="openaiModel"
-            className="input mono"
-            value={value?.openaiModel ?? ""}
+          <div className="row" style={{ gap: 10 }}>
+            <input
+              id="openaiModel"
+              className="input mono"
+              value={value?.openaiModel ?? ""}
+              onChange={(e) =>
+                setValue((v) => (v ? { ...v, openaiModel: e.target.value } : v))
+              }
+              placeholder="gpt-4o-mini"
+              list="openai-models"
+            />
+            <button
+              type="button"
+              className="button"
+              disabled={modelsBusy}
+              onClick={() => void loadModels()}
+            >
+              {modelsBusy ? "Loading…" : "Load models"}
+            </button>
+          </div>
+          <datalist id="openai-models">
+            {modelOptions.map((m) => (
+              <option key={m} value={m} />
+            ))}
+          </datalist>
+          {openAiModelsError ? (
+            <div className="muted" style={{ marginTop: 6 }}>
+              Models error: {openAiModelsError}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="field">
+          <label htmlFor="openaiReasoningEffort">Reasoning effort</label>
+          <select
+            id="openaiReasoningEffort"
+            className="input"
+            value={reasoningEffort}
             onChange={(e) =>
-              setValue((v) => (v ? { ...v, openaiModel: e.target.value } : v))
+              setValue((v) =>
+                v
+                  ? {
+                      ...v,
+                      openaiReasoningEffort:
+                        e.target.value === ""
+                          ? undefined
+                          : (e.target.value as Settings["openaiReasoningEffort"]),
+                    }
+                  : v
+              )
             }
-            placeholder="gpt-4o-mini"
-          />
+          >
+            <option value="">Default</option>
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+          </select>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Only applies to reasoning-capable models; others ignore or may reject it.
+          </div>
         </div>
 
         <div className="kv" style={{ marginTop: 10 }}>

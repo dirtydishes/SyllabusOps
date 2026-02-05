@@ -11,8 +11,10 @@ export type Settings = {
   watchRoots: string[];
   ingestEnabled: boolean;
   llmProvider: "openai" | "codex";
+  llmMaxOutputTokens: number;
   openaiApiBaseUrl: string;
   openaiModel: string;
+  openaiReasoningEffort?: "low" | "medium" | "high";
   codexModel: string;
   openaiOAuth?: {
     clientId: string;
@@ -194,6 +196,10 @@ export async function getJobs(input: {
 
 export async function getJobStats(): Promise<{ counts: Record<JobStatus, number> }> {
   return await http<{ counts: Record<JobStatus, number> }>("/api/jobs/stats");
+}
+
+export async function getOpenAiModels(): Promise<{ models: string[] }> {
+  return await http<{ models: string[] }>("/api/openai/models");
 }
 
 export async function getSettings(): Promise<Settings> {
