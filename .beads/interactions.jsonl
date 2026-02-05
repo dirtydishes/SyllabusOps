@@ -1,0 +1,2 @@
+{"id":"int-ce64c76e","kind":"tool_call","created_at":"2026-02-05T03:09:36.593121Z","actor":"dirtydishes","issue_id":"SyllabusOps-2mx","response":"Initialized Beads workflow in AGENTS.md and imported plan.md work into Beads issues (MVP epic + Phase 2 epic + child tasks).","tool_name":"codex"}
+{"id":"int-920acacc","kind":"tool_call","created_at":"2026-02-05T03:15:45.382321Z","actor":"dirtydishes","issue_id":"SyllabusOps-2mx.5","response":"Implemented SQLite job queue + runner and exposed /api/jobs + /api/jobs/enqueue.","tool_name":"codex"}
