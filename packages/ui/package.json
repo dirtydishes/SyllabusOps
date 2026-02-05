@@ -1,0 +1,12 @@
+{
+  "name": "@syllabusops/ui",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./theme.css": "./src/theme.css",
+    ".": "./src/index.ts"
+  },
+  "peerDependencies": {
+    "react": "^18"
+  }
+}
