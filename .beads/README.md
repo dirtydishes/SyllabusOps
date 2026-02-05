@@ -24,9 +24,13 @@
   - Queue view (job stats + filters + auto-refresh)
   - Logs view (level/search filters, pause/resume, clear)
   - Settings (watch roots, ingest toggle, LLM provider + auth)
-  - Markdown editor (Edit/Preview/Split + save snapshots + restore)
+  - Markdown editor (Edit/Preview/Split + save snapshots + restore + wrapped layout)
 - Tasks: JSON-schema task suggestions + per-session approval workflow (Suggest/Approve/Dismiss/Done)
+- Summaries:
+  - Session summary generation job writes `Unified/<course>/generated/sessions/<date>/session-summary.md`
+  - Summary markdown opens GitHub-style: rendered by default, with an in-pane Edit button
 - Beads: issues imported from `plan.md` and tracked in `.beads/issues.jsonl`
+- Hygiene: Biome checks pass; local `.syllabusops.*` archives ignored
 - Next milestone: Security hardening (SyllabusOps-2mx.18) + tests (SyllabusOps-2mx.19 / SyllabusOps-2mx.20)
 
 Welcome to Beads! This repository uses **Beads** for issue tracking - a modern, AI-native tool designed to live directly in your codebase alongside your code.
