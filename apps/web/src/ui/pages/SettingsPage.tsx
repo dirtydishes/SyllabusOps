@@ -7,6 +7,7 @@ import {
   getSettings,
   saveSettings,
 } from "../lib/api";
+import { formatLocalTimeOnYmd } from "../lib/time";
 import {
   type CodexStatus,
   codexLogout,
@@ -790,7 +791,9 @@ export function SettingsPage() {
         >
           {saving ? "Saving…" : "Save settings"}
         </button>
-        {savedAt ? <div className="muted mono">saved {savedAt}</div> : null}
+        {savedAt ? (
+          <div className="muted">saved at {formatLocalTimeOnYmd(savedAt)}</div>
+        ) : null}
       </div>
     </div>
   );

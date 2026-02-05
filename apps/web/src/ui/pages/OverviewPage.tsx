@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { type ApiStatus, type JobStatus, getJobStats, getStatus } from "../lib/api";
+import { formatLocalTimeOnYmd } from "../lib/time";
 
 export function OverviewPage() {
   const [status, setStatus] = useState<ApiStatus | null>(null);
@@ -50,7 +51,7 @@ export function OverviewPage() {
               </div>
               <div className="kv">
                 <div className="k">Now</div>
-                <div className="v mono">{status.now}</div>
+                <div className="v">{formatLocalTimeOnYmd(status.now)}</div>
               </div>
             </>
           ) : (
