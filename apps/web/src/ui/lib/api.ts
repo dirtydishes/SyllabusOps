@@ -16,6 +16,7 @@ export type Settings = {
   openaiModel: string;
   openaiReasoningEffort?: "low" | "medium" | "high";
   codexModel: string;
+  codexEffort?: "low" | "medium" | "high" | "xhigh";
   openaiOAuth?: {
     clientId: string;
     authorizeUrl: string;
@@ -200,6 +201,19 @@ export async function getJobStats(): Promise<{ counts: Record<JobStatus, number>
 
 export async function getOpenAiModels(): Promise<{ models: string[] }> {
   return await http<{ models: string[] }>("/api/openai/models");
+}
+
+export type CodexModelInfo = {
+  id: string;
+  displayName?: string;
+  description?: string;
+  isDefault?: boolean;
+  defaultReasoningEffort?: string;
+  supportedReasoningEfforts?: Array<{ reasoningEffort: string; description?: string }>;
+};
+
+export async function getCodexModels(): Promise<{ models: CodexModelInfo[] }> {
+  return await http<{ models: CodexModelInfo[] }>("/api/codex/models");
 }
 
 export async function getSettings(): Promise<Settings> {

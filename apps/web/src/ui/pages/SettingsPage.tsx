@@ -1,5 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { type Settings, getOpenAiModels, getSettings, saveSettings } from "../lib/api";
+import {
+  type CodexModelInfo,
+  type Settings,
+  getCodexModels,
+  getOpenAiModels,
+  getSettings,
+  saveSettings,
+} from "../lib/api";
 import {
   type CodexStatus,
   codexLogout,
@@ -27,6 +34,9 @@ export function SettingsPage() {
   const [modelsBusy, setModelsBusy] = useState(false);
   const [openAiModels, setOpenAiModels] = useState<string[]>([]);
   const [openAiModelsError, setOpenAiModelsError] = useState<string | null>(null);
+  const [codexModelsBusy, setCodexModelsBusy] = useState(false);
+  const [codexModels, setCodexModels] = useState<CodexModelInfo[]>([]);
+  const [codexModelsError, setCodexModelsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,12 +186,42 @@ export function SettingsPage() {
     }
   }
 
+  async function loadCodexModels() {
+    setCodexModelsError(null);
+    setCodexModelsBusy(true);
+    try {
+      const r = await getCodexModels();
+      setCodexModels(r.models);
+    } catch (e: unknown) {
+      setCodexModelsError(String((e as Error)?.message ?? e));
+    } finally {
+      setCodexModelsBusy(false);
+    }
+  }
+
   const reasoningEffort = value?.openaiReasoningEffort ?? "";
   const modelOptions = useMemo(() => {
     const set = new Set(openAiModels);
     if (value?.openaiModel) set.add(value.openaiModel);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [openAiModels, value?.openaiModel]);
+
+  const codexSelected = value?.codexModel ?? "";
+  const codexSelectedModel = useMemo(
+    () => codexModels.find((m) => m.id === codexSelected) ?? null,
+    [codexModels, codexSelected]
+  );
+  const codexEffortOptions = useMemo(() => {
+    const supported =
+      codexSelectedModel?.supportedReasoningEfforts?.map((e) => e.reasoningEffort) ??
+      [];
+    const set = new Set(supported);
+    const current = value?.codexEffort;
+    if (current) set.add(current);
+    const def = codexSelectedModel?.defaultReasoningEffort;
+    if (def) set.add(def);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [codexSelectedModel, value?.codexEffort]);
 
   return (
     <div className="page">
@@ -342,15 +382,73 @@ export function SettingsPage() {
 
         <div className="field" style={{ marginTop: 12 }}>
           <label htmlFor="codexModel">Model</label>
-          <input
-            id="codexModel"
-            className="input mono"
-            value={value?.codexModel ?? ""}
+          <div className="row" style={{ gap: 10 }}>
+            <input
+              id="codexModel"
+              className="input mono"
+              value={value?.codexModel ?? ""}
+              onChange={(e) =>
+                setValue((v) => (v ? { ...v, codexModel: e.target.value } : v))
+              }
+              placeholder="gpt-5.2-codex"
+              list="codex-models"
+            />
+            <button
+              type="button"
+              className="button"
+              disabled={codexModelsBusy}
+              onClick={() => void loadCodexModels()}
+            >
+              {codexModelsBusy ? "Loading…" : "Load models"}
+            </button>
+          </div>
+          <datalist id="codex-models">
+            {codexModels.map((m) => (
+              <option key={m.id} value={m.id} />
+            ))}
+          </datalist>
+          {codexSelectedModel?.description ? (
+            <div className="muted" style={{ marginTop: 6 }}>
+              {codexSelectedModel.description}
+            </div>
+          ) : null}
+          {codexModelsError ? (
+            <div className="muted" style={{ marginTop: 6 }}>
+              Models error: {codexModelsError}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="field">
+          <label htmlFor="codexEffort">Reasoning effort</label>
+          <select
+            id="codexEffort"
+            className="input"
+            value={value?.codexEffort ?? ""}
             onChange={(e) =>
-              setValue((v) => (v ? { ...v, codexModel: e.target.value } : v))
+              setValue((v) =>
+                v
+                  ? {
+                      ...v,
+                      codexEffort: e.target.value
+                        ? (e.target.value as Settings["codexEffort"])
+                        : undefined,
+                    }
+                  : v
+              )
             }
-            placeholder="gpt-5.1-codex"
-          />
+          >
+            <option value="">Default</option>
+            {codexEffortOptions.map((e) => (
+              <option key={e} value={e}>
+                {e}
+              </option>
+            ))}
+          </select>
+          <div className="muted" style={{ marginTop: 6 }}>
+            Uses Codex <span className="mono">turn/start</span> parameter{" "}
+            <span className="mono">effort</span> when supported.
+          </div>
         </div>
 
         <div className="row" style={{ marginTop: 10 }}>
