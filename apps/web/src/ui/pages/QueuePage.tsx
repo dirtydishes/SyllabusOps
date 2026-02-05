@@ -6,6 +6,7 @@ import {
   getJobStats,
   getJobs,
 } from "../lib/api";
+import { formatLocalTimeOnYmd } from "../lib/time";
 
 const Statuses: Array<JobStatus> = [
   "queued",
@@ -206,7 +207,9 @@ export function QueuePage() {
                 <div className="mono">
                   {j.attempts}/{j.max_attempts}
                 </div>
-                <div className="muted mono">{j.updated_at}</div>
+                <div className="muted mono">
+                  {formatLocalTimeOnYmd(j.updated_at)}
+                </div>
                 <div className="muted">{clip(j.last_error)}</div>
               </div>
             ))}
