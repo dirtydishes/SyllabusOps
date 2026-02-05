@@ -221,10 +221,23 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     const itemTextParts = new Map<string, string>();
     const completedAssistantTexts: string[] = [];
     let completed: { ok: true } | { ok: false; error: string } | null = null;
+    let lastThreadId: string | null = null;
+    let lastTurnId: string | null = null;
 
     function appendDelta(itemId: string, text: string) {
       const prev = itemTextParts.get(itemId) ?? "";
       itemTextParts.set(itemId, `${prev}${text}`);
+    }
+
+    function isAssistantLikeItemType(type: string): boolean {
+      const t = type.toLowerCase();
+      return (
+        t.includes("agentmessage") ||
+        t.includes("agent_message") ||
+        t.includes("assistant") ||
+        t.includes("assistantmessage") ||
+        t.includes("assistant_message")
+      );
     }
 
     function extractItemText(item: unknown): string {
@@ -251,9 +264,59 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       return `${fromContent || fromText || fromDelta}`.trim();
     }
 
+    function extractAssistantTextFromThreadRead(
+      raw: unknown,
+      turnId: string
+    ): string | null {
+      const parsed = z
+        .object({
+          thread: z
+            .object({
+              turns: z
+                .array(
+                  z
+                    .object({
+                      id: z.string().min(1),
+                      items: z.array(
+                        z
+                          .object({
+                            type: z.string().min(1),
+                            text: z.string().optional(),
+                          })
+                          .passthrough()
+                      ),
+                    })
+                    .passthrough()
+                )
+                .default([]),
+            })
+            .passthrough(),
+        })
+        .passthrough()
+        .safeParse(raw);
+      if (!parsed.success) return null;
+      const turn = parsed.data.thread.turns.find((t) => t.id === turnId);
+      if (!turn) return null;
+      const agentItems = turn.items.filter((it) => isAssistantLikeItemType(it.type));
+      const last = agentItems.at(-1);
+      const txt = last?.text?.trim();
+      return txt ? txt : null;
+    }
+
     const unsub = rpc.subscribe((method, params) => {
-      if (method === "item/delta") {
-        const p = z
+      if (method === "item/agentMessage/delta" || method === "item/delta") {
+        // v2: { threadId, turnId, itemId, delta: string }
+        // legacy: { itemId, delta: { text } }
+        const v2 = z
+          .object({ itemId: z.string().min(1), delta: z.string() })
+          .passthrough()
+          .safeParse(params);
+        if (v2.success) {
+          appendDelta(v2.data.itemId, v2.data.delta);
+          return;
+        }
+
+        const legacy = z
           .object({
             itemId: z.string().min(1).optional(),
             item: z.object({ id: z.string().min(1) }).passthrough().optional(),
@@ -261,9 +324,9 @@ export function createCodexAppServer(opts: { logger: Logger }) {
           })
           .passthrough()
           .safeParse(params);
-        if (!p.success) return;
-        const id = p.data.itemId ?? p.data.item?.id;
-        const text = p.data.delta?.text;
+        if (!legacy.success) return;
+        const id = legacy.data.itemId ?? legacy.data.item?.id;
+        const text = legacy.data.delta?.text;
         if (id && typeof text === "string") appendDelta(id, text);
         return;
       }
@@ -276,10 +339,11 @@ export function createCodexAppServer(opts: { logger: Logger }) {
           .passthrough()
           .safeParse(params);
         if (!p.success) return;
-        const t = p.data.item.type.toLowerCase();
-        if (!t.includes("assistant")) return;
+        if (!isAssistantLikeItemType(p.data.item.type)) return;
         const txt = extractItemText(p.data.item);
-        if (txt) completedAssistantTexts.push(txt);
+        const fromDeltas = itemTextParts.get(p.data.item.id)?.trim() ?? "";
+        const best = txt?.trim() ? txt.trim() : fromDeltas;
+        if (best) completedAssistantTexts.push(best);
         return;
       }
 
@@ -304,6 +368,7 @@ export function createCodexAppServer(opts: { logger: Logger }) {
           .passthrough()
           .safeParse(params);
         if (!p.success) return;
+        lastTurnId = p.data.turn.id;
         const status = p.data.turn.status.toLowerCase();
         if (status === "failed") {
           const msg =
@@ -320,6 +385,7 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     try {
       const threadStart = await rpc.request("thread/start", { model: input.model });
       const threadId = extractThreadId(threadStart);
+      lastThreadId = threadId;
 
       const fullPrompt =
         `SYSTEM:\n${input.system.trim()}\n\n` +
@@ -335,6 +401,7 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       });
 
       const turnId = extractTurnId(turnStart);
+      lastTurnId = turnId;
 
       // Wait for turn completion.
       const startedAt = Date.now();
@@ -344,8 +411,27 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       if (!completed) throw new Error("Codex turn timed out.");
       if (!completed.ok) throw new Error(completed.error);
 
-      const text = completedAssistantTexts.at(-1)?.trim();
-      if (!text) throw new Error("Codex returned no agentMessage text.");
+      let text = completedAssistantTexts.at(-1)?.trim() ?? "";
+      if (!text && lastThreadId && lastTurnId) {
+        try {
+          const threadRead = await rpc.request("thread/read", {
+            threadId: lastThreadId,
+            includeTurns: true,
+          });
+          text = extractAssistantTextFromThreadRead(threadRead, lastTurnId) ?? "";
+        } catch {
+          // ignore and fall back
+        }
+      }
+      if (!text && itemTextParts.size > 0) {
+        text = Array.from(itemTextParts.values()).join("").trim();
+      }
+      if (!text) {
+        throw new Error(
+          "Codex returned no agentMessage text. " +
+            `threadId=${lastThreadId ?? "?"} turnId=${lastTurnId ?? "?"}`
+        );
+      }
 
       let json: unknown;
       try {
