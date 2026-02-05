@@ -10,6 +10,7 @@ import { Elysia } from "elysia";
 import { z } from "zod";
 import { loadConfig } from "./config";
 import { openDb } from "./db";
+import { extractPdfToCache } from "./extract/pdf";
 import { extractPptxToCache } from "./extract/pptx";
 import { extractTranscriptToCache } from "./extract/transcript";
 import {
@@ -131,6 +132,16 @@ const runner = createJobRunner({
             payload: { canonicalPath: res.copiedTo, sha256: res.sha256 },
           });
         }
+        if (
+          res.kind === "slides" &&
+          path.extname(res.copiedTo).toLowerCase() === ".pdf"
+        ) {
+          queue.enqueue({
+            jobType: "extract_pdf",
+            priority: 2,
+            payload: { canonicalPath: res.copiedTo, sha256: res.sha256 },
+          });
+        }
         return "succeed";
       }
       case "extract_transcript": {
@@ -186,6 +197,34 @@ const runner = createJobRunner({
           canonicalPath,
           sha256,
           jsonPath: out.jsonPath,
+        });
+        return "succeed";
+      }
+      case "extract_pdf": {
+        const payload = JSON.parse(job.payload_json) as {
+          canonicalPath?: unknown;
+          sha256?: unknown;
+        };
+        const canonicalPath =
+          typeof payload.canonicalPath === "string"
+            ? payload.canonicalPath
+            : null;
+        const sha256 =
+          typeof payload.sha256 === "string" ? payload.sha256 : null;
+        if (!canonicalPath || !sha256) {
+          throw new Error(
+            "Invalid extract_pdf payload: canonicalPath and sha256 required."
+          );
+        }
+        const out = await extractPdfToCache({
+          canonicalPath,
+          sha256,
+          stateDir: config.stateDir,
+        });
+        logger.info("extract.pdf.cached", {
+          canonicalPath,
+          sha256,
+          textPath: out.textPath,
         });
         return "succeed";
       }
