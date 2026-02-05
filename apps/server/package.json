@@ -1,0 +1,15 @@
+{
+  "name": "@syllabusops/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "@elysiajs/cors": "^1.3.1",
+    "elysia": "^1.3.5",
+    "zod": "^3.24.2",
+    "@syllabusops/core": "workspace:*"
+  }
+}

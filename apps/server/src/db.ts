@@ -1,0 +1,59 @@
+import { Database } from "bun:sqlite";
+import fs from "node:fs/promises";
+import path from "node:path";
+
+export type Db = Database;
+
+export async function openDb(opts: { stateDir: string }): Promise<Db> {
+  await fs.mkdir(opts.stateDir, { recursive: true });
+  const dbPath = path.join(opts.stateDir, "syllabusops.sqlite");
+  const db = new Database(dbPath);
+  db.exec("PRAGMA journal_mode = WAL;");
+  db.exec("PRAGMA foreign_keys = ON;");
+  migrate(db);
+  return db;
+}
+
+function migrate(db: Db) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS migrations (
+      id TEXT PRIMARY KEY,
+      applied_at TEXT NOT NULL
+    );
+  `);
+
+  applyMigration(db, "2026-02-04_jobs_v1", () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS jobs (
+        id TEXT PRIMARY KEY,
+        job_type TEXT NOT NULL,
+        status TEXT NOT NULL,
+        priority INTEGER NOT NULL DEFAULT 2,
+        payload_json TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 5,
+        next_run_at TEXT NOT NULL,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_jobs_status_next ON jobs(status, next_run_at, priority);
+    `);
+  });
+}
+
+function applyMigration(db: Db, id: string, fn: () => void) {
+  const existing = db.query("SELECT 1 FROM migrations WHERE id = ?").get(id);
+  if (existing) return;
+
+  const now = new Date().toISOString();
+  const tx = db.transaction(() => {
+    fn();
+    db.query("INSERT INTO migrations (id, applied_at) VALUES (?, ?)").run(
+      id,
+      now
+    );
+  });
+  tx();
+}
