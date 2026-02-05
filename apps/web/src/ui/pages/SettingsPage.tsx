@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   type CodexModelInfo,
   type Settings,
+  adminReset,
   getCodexModels,
   getOpenAiModels,
   getSettings,
@@ -38,6 +39,10 @@ export function SettingsPage() {
   const [codexModelsBusy, setCodexModelsBusy] = useState(false);
   const [codexModels, setCodexModels] = useState<CodexModelInfo[]>([]);
   const [codexModelsError, setCodexModelsError] = useState<string | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetScope, setResetScope] = useState<"state" | "state+unified">("state");
+  const [resetConfirm, setResetConfirm] = useState("");
+  const [resetMsg, setResetMsg] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -197,6 +202,32 @@ export function SettingsPage() {
       setCodexModelsError(String((e as Error)?.message ?? e));
     } finally {
       setCodexModelsBusy(false);
+    }
+  }
+
+  async function onReset() {
+    if (!value) return;
+    if (resetConfirm.trim().toUpperCase() !== "RESET") return;
+    setResetBusy(true);
+    setError(null);
+    setResetMsg(null);
+    try {
+      const res = await adminReset({
+        scope: resetScope,
+        confirm: "RESET",
+        unifiedDir: resetScope === "state+unified" ? value.unifiedDir : undefined,
+      });
+      setResetConfirm("");
+      setResetMsg(
+        `Reset complete. Ingestion is now disabled. ${
+          resetScope === "state+unified" ? `Unified items removed: ${res.unifiedDeleted}.` : ""
+        }`
+      );
+      setValue(await getSettings());
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setResetBusy(false);
     }
   }
 
@@ -794,6 +825,56 @@ export function SettingsPage() {
         {savedAt ? (
           <div className="muted">saved at {formatLocalTimeOnYmd(savedAt)}</div>
         ) : null}
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="card-title">Danger Zone</div>
+        <div className="muted">
+          Clean slate: clears local state (jobs/tasks/cache/logs/revisions) and disables ingestion.
+          Optionally wipes the Unified library contents. Your original source files are not touched.
+        </div>
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="resetScope">Reset scope</label>
+          <select
+            id="resetScope"
+            className="input"
+            value={resetScope}
+            onChange={(e) => setResetScope(e.target.value as typeof resetScope)}
+          >
+            <option value="state">Local state only</option>
+            <option value="state+unified">Local state + Unified library</option>
+          </select>
+          {resetScope === "state+unified" ? (
+            <div className="muted" style={{ marginTop: 6 }}>
+              Will delete everything under <span className="mono">{value?.unifiedDir ?? "Unified"}</span>.
+              SyllabusOps refuses to wipe a folder whose name doesn’t include “Unified”.
+            </div>
+          ) : null}
+        </div>
+
+        <div className="field">
+          <label htmlFor="resetConfirm">Type RESET to confirm</label>
+          <input
+            id="resetConfirm"
+            className="input mono"
+            value={resetConfirm}
+            onChange={(e) => setResetConfirm(e.target.value)}
+            placeholder="RESET"
+          />
+        </div>
+
+        <div className="row">
+          <button
+            type="button"
+            className="button"
+            disabled={!value || resetBusy || resetConfirm.trim().toUpperCase() !== "RESET"}
+            onClick={onReset}
+          >
+            {resetBusy ? "Resetting…" : "Run reset"}
+          </button>
+          {resetMsg ? <div className="muted">{resetMsg}</div> : null}
+        </div>
       </div>
     </div>
   );

@@ -17,6 +17,10 @@ export class StabilityGate {
     this.stableWindowMs = opts.stableWindowMs;
   }
 
+  clear() {
+    this.states.clear();
+  }
+
   observe(
     filePath: string,
     obs: StabilityObservation,

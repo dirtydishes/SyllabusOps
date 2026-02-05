@@ -228,6 +228,21 @@ export async function saveSettings(next: Settings): Promise<{ ok: true }> {
   });
 }
 
+export async function adminReset(input: {
+  scope: "state" | "state+unified";
+  confirm: "RESET";
+  unifiedDir?: string;
+}): Promise<{ ok: true; unifiedDeleted: number; ingestEnabled: boolean }> {
+  return await http<{ ok: true; unifiedDeleted: number; ingestEnabled: boolean }>(
+    "/api/admin/reset",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }
+  );
+}
+
 export async function fsList(relPath: string): Promise<FsListResponse> {
   const url = new URL("/api/fs/list", window.location.origin);
   url.searchParams.set("path", relPath);

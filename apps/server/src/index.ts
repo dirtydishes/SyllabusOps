@@ -475,6 +475,41 @@ const runner = createJobRunner({
 });
 runner.start();
 
+function countRunningJobs(): number {
+  const row = db
+    .query("SELECT COUNT(*) AS n FROM jobs WHERE status = 'running'")
+    .get() as { n?: number } | null;
+  return Number(row?.n ?? 0);
+}
+
+async function rmDirContents(absDir: string): Promise<number> {
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(absDir);
+  } catch {
+    return 0;
+  }
+  for (const name of entries) {
+    await fs.rm(path.join(absDir, name), { recursive: true, force: true });
+  }
+  return entries.length;
+}
+
+function looksSafeUnifiedDirForWipe(
+  unifiedDir: string
+): { ok: true } | { ok: false; error: string } {
+  const resolved = path.resolve(unifiedDir);
+  const root = path.parse(resolved).root;
+  const home = process.env.HOME ? path.resolve(process.env.HOME) : null;
+  const base = path.basename(resolved).toLowerCase();
+
+  if (resolved === root) return { ok: false, error: "RESET_REFUSED_ROOT" };
+  if (home && resolved === home) return { ok: false, error: "RESET_REFUSED_HOME" };
+  if (base.length < 3) return { ok: false, error: "RESET_REFUSED_TOO_SHORT" };
+  if (!base.includes("unified")) return { ok: false, error: "RESET_REFUSED_NOT_UNIFIED" };
+  return { ok: true };
+}
+
 const app = new Elysia()
   .use(cors())
   .get("/api/status", async () => {
@@ -762,6 +797,82 @@ const app = new Elysia()
     return { job };
   })
   .get("/api/settings", () => currentSettings)
+  .post("/api/admin/reset", async ({ body }) => {
+    const b = z
+      .object({
+        scope: z.enum(["state", "state+unified"]).default("state"),
+        confirm: z.literal("RESET"),
+        unifiedDir: z.string().optional(),
+      })
+      .parse(body);
+
+    // Stop new work while we reset.
+    const watcherWasRunning = watcher.getState().running;
+    watcher.stop();
+    runner.stop();
+
+    // Wait briefly for any in-flight job to finish.
+    const startedAt = Date.now();
+    while (countRunningJobs() > 0 && Date.now() - startedAt < 10_000) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (countRunningJobs() > 0) {
+      if (watcherWasRunning) watcher.start();
+      runner.start();
+      return new Response(JSON.stringify({ error: "RESET_BUSY_RUNNING_JOBS" }), {
+        status: 409,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    // Disable ingestion after reset by default (safer).
+    const nextSettings = { ...currentSettings, ingestEnabled: false };
+    await writeSettings(nextSettings);
+    currentSettings = nextSettings;
+    watcher.updateRoots(nextSettings.watchRoots);
+
+    // Clear DB state (jobs/tasks).
+    db.exec("DELETE FROM jobs;");
+    db.exec("DELETE FROM tasks;");
+
+    // Clear local caches/logs/revisions.
+    await fs.rm(path.join(config.stateDir, "cache"), { recursive: true, force: true });
+    await fs.rm(path.join(config.stateDir, "logs"), { recursive: true, force: true });
+    await fs.rm(path.join(config.stateDir, "revisions"), { recursive: true, force: true });
+
+    // Optionally wipe the Unified library.
+    let unifiedDeleted = 0;
+    if (b.scope === "state+unified") {
+      if (typeof b.unifiedDir !== "string" || b.unifiedDir !== currentSettings.unifiedDir) {
+        return new Response(JSON.stringify({ error: "RESET_UNIFIED_DIR_MISMATCH" }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      const safe = looksSafeUnifiedDirForWipe(currentSettings.unifiedDir);
+      if (!safe.ok) {
+        return new Response(JSON.stringify({ error: safe.error }), {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      unifiedDeleted = await rmDirContents(currentSettings.unifiedDir);
+    }
+
+    watcher.resetSession();
+
+    if (watcherWasRunning) watcher.start();
+    runner.start();
+
+    logger.warn("admin.reset", {
+      scope: b.scope,
+      unifiedDeleted,
+      stateDir: config.stateDir,
+      unifiedDir: currentSettings.unifiedDir,
+    });
+
+    return { ok: true, unifiedDeleted, ingestEnabled: currentSettings.ingestEnabled };
+  })
   .post("/api/settings", async ({ body }) => {
     const parsed = normalizeSettings(SettingsSchema.parse(body));
     await writeSettings(parsed);

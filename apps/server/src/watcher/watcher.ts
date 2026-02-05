@@ -22,6 +22,7 @@ export type Watcher = {
   stop: () => void;
   updateRoots: (roots: string[]) => void;
   scanNow: () => Promise<void>;
+  resetSession: () => void;
   getState: () => WatcherState;
 };
 
@@ -34,7 +35,7 @@ export function createWatcher(opts: {
   shouldEnqueue: () => boolean;
   getIgnoredAbsPrefixes?: () => string[];
 }): Watcher {
-  const gate = new StabilityGate({
+  let gate = new StabilityGate({
     stableWindowMs: opts.config.stableWindowMs,
   });
 
@@ -118,6 +119,14 @@ export function createWatcher(opts: {
     },
     scanNow: async () => {
       await doScan();
+    },
+    resetSession: () => {
+      enqueued.clear();
+      gate.clear();
+      lastScanAt = null;
+      lastScanFileCount = 0;
+      enqueuedTotal = 0;
+      opts.logger.info("watch.reset_session");
     },
     getState: () => ({
       running,
