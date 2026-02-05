@@ -66,11 +66,25 @@ type Settings = z.infer<typeof SettingsSchema>;
 
 const settingsPath = path.join(config.stateDir, "settings.json");
 
+function normalizeShellEscapedPath(p: string): string {
+  // Common footgun: users paste shell-escaped paths like `Mobile\ Documents`.
+  // On macOS, backslash is not a path separator; unescape only `\ `.
+  return p.replaceAll("\\ ", " ").trim();
+}
+
+function normalizeSettings(s: Settings): Settings {
+  return {
+    ...s,
+    unifiedDir: normalizeShellEscapedPath(s.unifiedDir),
+    watchRoots: (s.watchRoots ?? []).map(normalizeShellEscapedPath).filter(Boolean),
+  };
+}
+
 async function readSettings(): Promise<Settings> {
   try {
     const raw = await fs.readFile(settingsPath, "utf8");
     const parsed = SettingsSchema.safeParse(JSON.parse(raw));
-    if (parsed.success) return parsed.data;
+    if (parsed.success) return normalizeSettings(parsed.data);
   } catch {
     // ignore
   }
@@ -748,7 +762,7 @@ const app = new Elysia()
   })
   .get("/api/settings", () => currentSettings)
   .post("/api/settings", async ({ body }) => {
-    const parsed = SettingsSchema.parse(body);
+    const parsed = normalizeSettings(SettingsSchema.parse(body));
     await writeSettings(parsed);
     currentSettings = parsed;
     watcher.updateRoots(parsed.watchRoots);
