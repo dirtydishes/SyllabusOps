@@ -53,13 +53,13 @@ const SettingsSchema = z.object({
   unifiedDir: z.string().min(1),
   watchRoots: z.array(z.string()).default([]),
   ingestEnabled: z.boolean().default(false),
-  llmProvider: z.enum(["openai", "codex"]).default("openai"),
+  llmProvider: z.enum(["openai", "codex"]).default("codex"),
   llmMaxOutputTokens: z.number().int().min(256).max(8000).default(1200),
   openaiOAuth: OpenAiOAuthConfigSchema.optional(),
   openaiApiBaseUrl: z.string().url().default("https://api.openai.com/v1"),
   openaiModel: z.string().min(1).default("gpt-4o-mini"),
   openaiReasoningEffort: z.enum(["low", "medium", "high"]).optional(),
-  codexModel: z.string().min(1).default("gpt-5.1-codex"),
+  codexModel: z.string().min(1).default("gpt-5.2-codex"),
   codexEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
 });
 type Settings = z.infer<typeof SettingsSchema>;
@@ -92,13 +92,13 @@ async function readSettings(): Promise<Settings> {
     unifiedDir: config.unifiedDir,
     watchRoots: config.watchRoots,
     ingestEnabled: false,
-    llmProvider: "openai",
+    llmProvider: "codex",
     llmMaxOutputTokens: 1200,
     openaiOAuth: undefined,
     openaiApiBaseUrl: "https://api.openai.com/v1",
     openaiModel: "gpt-4o-mini",
     openaiReasoningEffort: undefined,
-    codexModel: "gpt-5.1-codex",
+    codexModel: "gpt-5.2-codex",
     codexEffort: undefined,
   };
 }

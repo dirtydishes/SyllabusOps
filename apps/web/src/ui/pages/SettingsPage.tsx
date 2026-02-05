@@ -304,7 +304,7 @@ export function SettingsPage() {
           <select
             id="llmProvider"
             className="input"
-            value={value?.llmProvider ?? "openai"}
+            value={value?.llmProvider ?? "codex"}
             onChange={(e) =>
               setValue((v) =>
                 v
