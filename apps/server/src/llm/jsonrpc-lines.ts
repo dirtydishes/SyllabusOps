@@ -1,8 +1,8 @@
 import type { Logger } from "../logger";
 
-type JsonRpcRequest = { jsonrpc: "2.0"; id: number; method: string; params?: unknown };
+// Codex app-server uses JSON-RPC 2.0 semantics but omits the `jsonrpc` field.
+type JsonRpcRequest = { id: number; method: string; params: unknown };
 type JsonRpcResponse = {
-  jsonrpc?: "2.0";
   id?: number;
   result?: unknown;
   error?: { code?: number; message?: string; data?: unknown };
@@ -51,7 +51,7 @@ async function* readLines(stream: ReadableStream<Uint8Array>) {
 
 export class JsonRpcLineClient {
   private proc: ReturnType<typeof Bun.spawn> | null = null;
-  private writer: WritableStreamDefaultWriter<Uint8Array> | null = null;
+  private writeToStdin: ((bytes: Uint8Array) => Promise<void>) | null = null;
   private nextId = 1;
   private readonly pending = new Map<
     number,
@@ -73,7 +73,11 @@ export class JsonRpcLineClient {
   }
 
   async start(): Promise<void> {
-    if (this.proc) return;
+    if (this.proc && this.writeToStdin) return;
+    if (this.proc && !this.writeToStdin) {
+      // handle race where process exited and the exit handler cleared writer first
+      this.proc = null;
+    }
 
     try {
       this.proc = Bun.spawn(this.opts.cmd, { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
@@ -87,7 +91,20 @@ export class JsonRpcLineClient {
       throw new Error(`${this.opts.name} missing stdio pipes.`);
     }
 
-    this.writer = this.proc.stdin.getWriter();
+    const stdin: unknown = this.proc.stdin;
+    if (stdin && typeof (stdin as { write?: unknown }).write === "function") {
+      this.writeToStdin = async (bytes) => {
+        // Bun FileSink / Node Writable-like
+        (stdin as { write: (b: Uint8Array) => unknown }).write(bytes);
+      };
+    } else if (stdin && typeof (stdin as { getWriter?: unknown }).getWriter === "function") {
+      const writer = (stdin as WritableStream<Uint8Array>).getWriter();
+      this.writeToStdin = async (bytes) => {
+        await writer.write(bytes);
+      };
+    } else {
+      throw new Error(`${this.opts.name} stdin is not writable.`);
+    }
 
     void (async () => {
       if (!this.proc?.stdout) return;
@@ -150,18 +167,18 @@ export class JsonRpcLineClient {
         p.reject(err);
       }
       this.proc = null;
-      this.writer = null;
+      this.writeToStdin = null;
     })();
   }
 
   async request<T = unknown>(method: string, params?: unknown): Promise<T> {
     await this.start();
-    if (!this.writer) throw new Error(`${this.opts.name} not started.`);
+    if (!this.writeToStdin) throw new Error(`${this.opts.name} not started.`);
     const id = this.nextId++;
-    const req: JsonRpcRequest = { jsonrpc: "2.0", id, method, params };
+    const req: JsonRpcRequest = { id, method, params: params ?? {} };
     const line = `${JSON.stringify(req)}\n`;
     const bytes = new TextEncoder().encode(line);
-    await this.writer.write(bytes);
+    await this.writeToStdin(bytes);
     return await new Promise<T>((resolve, reject) => {
       this.pending.set(id, { resolve, reject });
     });
@@ -169,11 +186,10 @@ export class JsonRpcLineClient {
 
   async notify(method: string, params?: unknown): Promise<void> {
     await this.start();
-    if (!this.writer) throw new Error(`${this.opts.name} not started.`);
-    const msg = { jsonrpc: "2.0", method, params };
+    if (!this.writeToStdin) throw new Error(`${this.opts.name} not started.`);
+    const msg = { method, params: params ?? {} };
     const line = `${JSON.stringify(msg)}\n`;
     const bytes = new TextEncoder().encode(line);
-    await this.writer.write(bytes);
+    await this.writeToStdin(bytes);
   }
 }
-

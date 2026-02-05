@@ -10,16 +10,54 @@ const AccountSchema = z
   })
   .passthrough();
 
-const AccountReadResultSchema = z.object({
-  account: AccountSchema.nullable(),
-  requiresOpenaiAuth: z.boolean(),
-});
+const AccountReadResultSchema = z
+  .object({
+    account: AccountSchema.nullable(),
+    requiresOpenaiAuth: z.boolean(),
+  })
+  .passthrough();
 
 const LoginStartResultSchema = z.object({
   authUrl: z.string().url(),
-});
+}).passthrough();
 
-const ThreadStartResultSchema = z.object({ threadId: z.string().min(1) });
+function extractThreadId(raw: unknown): string {
+  const a = z
+    .object({ threadId: z.string().min(1) })
+    .passthrough()
+    .safeParse(raw);
+  if (a.success) return a.data.threadId;
+
+  const b = z
+    .object({ thread: z.object({ id: z.string().min(1) }).passthrough() })
+    .passthrough()
+    .safeParse(raw);
+  if (b.success) return b.data.thread.id;
+
+  const c = z
+    .object({ thread: z.string().min(1) })
+    .passthrough()
+    .safeParse(raw);
+  if (c.success) return c.data.thread;
+
+  throw new Error("Unexpected thread/start response shape.");
+}
+
+function extractTurnId(raw: unknown): string {
+  const a = z.object({ turnId: z.string().min(1) }).passthrough().safeParse(raw);
+  if (a.success) return a.data.turnId;
+
+  const b = z
+    .object({ turn: z.object({ id: z.string().min(1) }).passthrough() })
+    .passthrough()
+    .safeParse(raw);
+  if (b.success) return b.data.turn.id;
+
+  const c = z.object({ id: z.string().min(1) }).passthrough().safeParse(raw);
+  if (c.success) return c.data.id;
+
+  throw new Error("Unexpected turn/start response shape.");
+}
 
 type TurnCompletedPayload = {
   turnId?: string;
@@ -100,6 +138,7 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     try {
       await ensureInitialized();
       const raw = await rpc.request("account/login/start", { type: "chatgpt" });
+      // codex app-server returns { type, authUrl, loginId, ... }
       const parsed = LoginStartResultSchema.parse(raw);
       return { ok: true, authUrl: parsed.authUrl };
     } catch (e: unknown) {
@@ -168,23 +207,20 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     });
 
     try {
-      const thread = ThreadStartResultSchema.parse(
-        await rpc.request("thread/start", { model: input.model })
-      );
+      const threadStart = await rpc.request("thread/start", { model: input.model });
+      const threadId = extractThreadId(threadStart);
 
       const fullPrompt =
         `SYSTEM:\n${input.system.trim()}\n\n` +
         `USER:\n${input.user.trim()}\n`;
 
-      const turn = await rpc.request("turn/start", {
-        threadId: thread.threadId,
+      const turnStart = await rpc.request("turn/start", {
+        threadId,
         input: [{ type: "text", text: fullPrompt }],
         outputSchema: { name: input.schemaName, schema: input.schema },
       });
 
-      const turnId = z
-        .object({ turnId: z.string().min(1) })
-        .parse(turn).turnId;
+      const turnId = extractTurnId(turnStart);
 
       // Wait for turn completion.
       await new Promise<void>((resolve, reject) => {
@@ -194,12 +230,22 @@ export function createCodexAppServer(opts: { logger: Logger }) {
 
         const unsub2 = rpc.subscribe((method, params) => {
           if (method !== "turn/completed") return;
-          const p = z
+          const p1 = z
             .object({ turnId: z.string().min(1) })
             .passthrough()
             .safeParse(params as TurnCompletedPayload);
-          if (!p.success) return;
-          if (p.data.turnId !== turnId) return;
+          const completedId = p1.success
+            ? p1.data.turnId
+            : z
+                .object({ turn: z.object({ id: z.string().min(1) }) })
+                .passthrough()
+                .safeParse(params).success
+              ? z
+                  .object({ turn: z.object({ id: z.string().min(1) }) })
+                  .parse(params).turn.id
+              : null;
+          if (!completedId) return;
+          if (completedId !== turnId) return;
           clearTimeout(timeout);
           unsub2();
           resolve();
@@ -223,4 +269,3 @@ export function createCodexAppServer(opts: { logger: Logger }) {
 
   return { status, loginStartChatgpt, logout, jsonSchemaTurn };
 }
-
