@@ -12,11 +12,12 @@
 ```
 
 ## Current Status (2026-02-05)
-- Monorepo scaffolded (Bun + TypeScript) with `apps/server`, `apps/web`, `packages/core`, `packages/ui`
-- Server skeleton live: status/settings/logs/SSE + editor FS APIs + SQLite job queue
-- Web UI skeleton live: Overview, Logs, Settings, Markdown editor + preview
-- Beads issues imported from `plan.md` (MVP + Phase 2) and hooks installed
-- Next milestone: watcher + scan + stability gate (SyllabusOps-2mx.6)
+- Pipeline: watcher + stability gate, canonical copy + meta sidecars, transcript/PPTX/PDF extraction, per-course Unified layout
+- AI auth: OpenAI OAuth (PKCE) + Keychain + API-key fallback; Settings UI to configure + connect/disconnect
+- Dashboard: Overview, Classes (sessions + artifacts), Queue, Logs (filters + pause), Settings, Markdown editor (preview + revisions)
+- Tasks: OpenAI Responses JSON-schema task suggestions + per-session approval workflow
+- Beads: issues imported from `plan.md` and tracked in `.beads/issues.jsonl`
+- Next milestone: Security hardening (SyllabusOps-2mx.18)
 
 Welcome to Beads! This repository uses **Beads** for issue tracking - a modern, AI-native tool designed to live directly in your codebase alongside your code.
 
