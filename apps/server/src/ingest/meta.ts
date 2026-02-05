@@ -9,5 +9,9 @@ export type ArtifactMetaV1 = {
     courseSlug: string;
     sessionDate: string;
   };
+  resolved?: {
+    courseShort: string;
+    courseSlug: string;
+  };
   pipelineVersion: string;
 };

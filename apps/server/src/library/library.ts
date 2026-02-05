@@ -13,6 +13,12 @@ const ArtifactMetaSchema = z.object({
     courseSlug: z.string(),
     sessionDate: z.string(),
   }),
+  resolved: z
+    .object({
+      courseShort: z.string(),
+      courseSlug: z.string(),
+    })
+    .optional(),
   pipelineVersion: z.string(),
 });
 

@@ -73,6 +73,10 @@ export async function ingestFile(opts: {
   unifiedDir: string;
   pipelineVersion: string;
   logger: Logger;
+  resolveCourse?: (detected: {
+    courseShort: string;
+    courseSlug: string;
+  }) => Promise<{ courseShort: string; courseSlug: string }>;
 }): Promise<IngestFileResult> {
   let st: { mtimeMs: number } | null = null;
   try {
@@ -85,10 +89,15 @@ export async function ingestFile(opts: {
   if (!st) return { ok: false, error: "Missing stat." };
 
   const kind = detectArtifactKind(opts.sourcePath);
-  const { courseShort, courseSlug } = courseFromSourcePath(
+  const detectedCourse = courseFromSourcePath(
     opts.sourcePath,
     opts.watchRoot ?? null
   );
+  const resolvedCourse = opts.resolveCourse
+    ? await opts.resolveCourse(detectedCourse)
+    : detectedCourse;
+  const courseShort = resolvedCourse.courseShort;
+  const courseSlug = resolvedCourse.courseSlug;
   const sessionDate = detectSessionDate({
     sourcePath: opts.sourcePath,
     mtimeMs: st.mtimeMs,
@@ -119,6 +128,7 @@ export async function ingestFile(opts: {
       kind,
       sessionDate,
       courseSlug,
+      detectedCourseSlug: detectedCourse.courseSlug,
     });
     return {
       ok: true,
@@ -163,7 +173,12 @@ export async function ingestFile(opts: {
     sourcePath: opts.sourcePath,
     sha256,
     kind,
-    detected: { courseShort, courseSlug, sessionDate },
+    detected: {
+      courseShort: detectedCourse.courseShort,
+      courseSlug: detectedCourse.courseSlug,
+      sessionDate,
+    },
+    resolved: { courseShort, courseSlug },
     pipelineVersion: opts.pipelineVersion,
   };
 
@@ -177,6 +192,7 @@ export async function ingestFile(opts: {
     kind,
     sessionDate,
     courseSlug,
+    detectedCourseSlug: detectedCourse.courseSlug,
   });
 
   return {

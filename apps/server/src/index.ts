@@ -19,6 +19,8 @@ import { openDb } from "./db";
 import { extractPdfToCache } from "./extract/pdf";
 import { extractPptxToCache } from "./extract/pptx";
 import { extractTranscriptToCache } from "./extract/transcript";
+import { scanCourseDetailGrouped, scanCoursesGrouped, scanSessionGrouped } from "./courses/grouped-library";
+import { createCourseRegistry } from "./courses/registry";
 import {
   FsSchemas,
   getRevisionDir,
@@ -31,7 +33,6 @@ import { ingestFile } from "./ingest/ingest-file";
 import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
 import { EnqueueJobRequestSchema, JobStatusSchema, JobTypeSchema } from "./jobs/schemas";
-import { scanCourseDetail, scanCourses, scanSession } from "./library/library";
 import { createCodexAppServer } from "./llm/codex-app-server";
 import { openAiJsonSchema } from "./llm/openai-responses";
 import { Logger } from "./logger";
@@ -47,6 +48,7 @@ const logger = new Logger({ logsDir: path.join(config.stateDir, "logs") });
 const sse = new SseHub();
 const db = await openDb({ stateDir: config.stateDir });
 const queue = createJobQueue(db);
+const courseRegistry = createCourseRegistry({ stateDir: config.stateDir, logger });
 
 logger.subscribe((evt) => sse.broadcast({ type: "log", payload: evt }));
 
@@ -173,6 +175,11 @@ const runner = createJobRunner({
           unifiedDir: currentSettings.unifiedDir,
           pipelineVersion: "0.0.0-dev",
           logger,
+          resolveCourse: async (detected) => {
+            const canonical = await courseRegistry.resolveCanonical(detected.courseSlug);
+            const name = await courseRegistry.nameFor(canonical);
+            return { courseSlug: canonical, courseShort: name ?? detected.courseShort };
+          },
         });
         if (!res.ok) throw new Error(res.error);
 
@@ -324,9 +331,10 @@ const runner = createJobRunner({
           }
         }
 
-        const scanned = await scanSession({
+        const scanned = await scanSessionGrouped({
           unifiedDir: currentSettings.unifiedDir,
           stateDir: config.stateDir,
+          registry: courseRegistry,
           courseSlug,
           sessionDate,
         });
@@ -338,6 +346,7 @@ const runner = createJobRunner({
           });
           return "skip";
         }
+        const canonicalCourseSlug = scanned.course.slug;
 
         const maxCharsPerArtifact = 35_000;
         const contextParts: string[] = [];
@@ -403,7 +412,7 @@ const runner = createJobRunner({
           "If no tasks are present, return {\"tasks\": []}.";
 
         const user =
-          `Course: ${scanned.course.name} (${courseSlug})\n` +
+          `Course: ${scanned.course.name} (${canonicalCourseSlug})\n` +
           `Session date: ${sessionDate}\n\n` +
           contextParts.join("\n");
 
@@ -457,7 +466,7 @@ const runner = createJobRunner({
         const tasksStore = createTasksStore(db);
         const inserted = tasksStore.insertSuggested(
           parsed.tasks.map((t) => ({
-            courseSlug,
+            courseSlug: canonicalCourseSlug,
             sessionDate,
             artifactSha: null,
             title: t.title,
@@ -468,7 +477,7 @@ const runner = createJobRunner({
         );
 
         logger.info("tasks.suggested", {
-          courseSlug,
+          courseSlug: canonicalCourseSlug,
           sessionDate,
           inserted: inserted.inserted,
         });
@@ -510,9 +519,10 @@ const runner = createJobRunner({
           }
         }
 
-        const scanned = await scanSession({
+        const scanned = await scanSessionGrouped({
           unifiedDir: currentSettings.unifiedDir,
           stateDir: config.stateDir,
+          registry: courseRegistry,
           courseSlug,
           sessionDate,
         });
@@ -524,6 +534,7 @@ const runner = createJobRunner({
           });
           return "skip";
         }
+        const canonicalCourseSlug = scanned.course.slug;
 
         const maxCharsPerArtifact = 45_000;
         const contextParts: string[] = [];
@@ -601,7 +612,7 @@ const runner = createJobRunner({
           "Do not include anything not grounded in the provided context.";
 
         const user =
-          `Course: ${scanned.course.name} (${courseSlug})\n` +
+          `Course: ${scanned.course.name} (${canonicalCourseSlug})\n` +
           `Session date: ${sessionDate}\n\n` +
           contextParts.join("\n");
 
@@ -681,14 +692,14 @@ const runner = createJobRunner({
         for (const q of parsed.questions) md.push(`- ${q}`);
         md.push("");
 
-        const relPath = `${courseSlug}/generated/sessions/${sessionDate}/session-summary.md`;
+        const relPath = `${canonicalCourseSlug}/generated/sessions/${sessionDate}/session-summary.md`;
         const resolved = resolveWithinRoot(currentSettings.unifiedDir, relPath);
         if (!resolved.ok) throw new Error("SUMMARY_PATH_DENIED");
         await fs.mkdir(path.dirname(resolved.absolutePath), { recursive: true });
         await fs.writeFile(resolved.absolutePath, `${md.join("\n")}\n`, "utf8");
 
         logger.info("summary.session.generated", {
-          courseSlug,
+          courseSlug: canonicalCourseSlug,
           sessionDate,
           relPath,
         });
@@ -831,7 +842,7 @@ const app = new Elysia()
     await codex.logout();
     return { ok: true };
   })
-  .get("/api/tasks", ({ query }) => {
+  .get("/api/tasks", async ({ query }) => {
     const q = z
       .object({
         courseSlug: z.string().min(1),
@@ -840,9 +851,10 @@ const app = new Elysia()
         limit: z.coerce.number().int().positive().optional(),
       })
       .parse(query);
+    const canonical = await courseRegistry.resolveCanonical(q.courseSlug);
     const tasksStore = createTasksStore(db);
     const tasks = tasksStore.list({
-      courseSlug: q.courseSlug,
+      courseSlug: canonical,
       sessionDate: q.sessionDate,
       status: q.status,
       limit: q.limit,
@@ -903,20 +915,21 @@ const app = new Elysia()
     return tasksStore.setStatus({ id, status: "done" });
   })
   .get("/api/courses", async () => ({
-    courses: await scanCourses({
+    courses: await scanCoursesGrouped({
       unifiedDir: currentSettings.unifiedDir,
       stateDir: config.stateDir,
+      registry: courseRegistry,
     }),
   }))
   .get("/api/courses/:courseSlug", async ({ params }) => {
     const courseSlug = z
       .object({ courseSlug: z.string().min(1) })
       .parse(params).courseSlug;
-    const res = await scanCourseDetail({
+    const res = await scanCourseDetailGrouped({
       unifiedDir: currentSettings.unifiedDir,
       stateDir: config.stateDir,
+      registry: courseRegistry,
       courseSlug,
-      limitSessions: 0,
     });
     if (!res.ok) {
       return new Response(JSON.stringify({ error: res.error }), { status: 404 });
@@ -928,11 +941,41 @@ const app = new Elysia()
         date: s.date,
         artifacts: s.artifacts,
         generated: {
-          sessionSummaryPath: `${courseSlug}/generated/sessions/${s.date}/session-summary.md`,
-          sessionNotesPath: `${courseSlug}/notes/sessions/${s.date}/notes.md`,
+          sessionSummaryPath: `${res.course.slug}/generated/sessions/${s.date}/session-summary.md`,
+          sessionNotesPath: `${res.course.slug}/notes/sessions/${s.date}/notes.md`,
         },
       })),
     };
+  })
+  .post("/api/courses/:courseSlug/rename", async ({ params, body }) => {
+    const courseSlug = z.object({ courseSlug: z.string().min(1) }).parse(params).courseSlug;
+    const b = z.object({ name: z.string().min(1) }).parse(body);
+    const canonical = await courseRegistry.resolveCanonical(courseSlug);
+    await courseRegistry.setName(canonical, b.name);
+    return { ok: true };
+  })
+  .post("/api/courses/merge", async ({ body }) => {
+    const b = z
+      .object({
+        destinationSlug: z.string().min(1),
+        sourceSlugs: z.array(z.string().min(1)).min(1),
+        name: z.string().optional(),
+      })
+      .parse(body);
+    const destination = await courseRegistry.resolveCanonical(b.destinationSlug);
+    const sources = Array.from(new Set(b.sourceSlugs.map((s) => s.trim()).filter(Boolean)));
+    await fs.mkdir(path.join(currentSettings.unifiedDir, destination), { recursive: true });
+    await courseRegistry.mergeInto({ destinationSlug: destination, sourceSlugs: sources, name: b.name });
+
+    // Move tasks over so TODO lists stay unified.
+    const placeholders = sources.map(() => "?").join(",");
+    if (placeholders) {
+      db.query(`UPDATE tasks SET course_slug = ? WHERE course_slug IN (${placeholders})`).run(
+        destination,
+        ...sources
+      );
+    }
+    return { ok: true, destinationSlug: destination };
   })
   .get("/api/artifacts/extracted", async ({ query }) => {
     const q = z
