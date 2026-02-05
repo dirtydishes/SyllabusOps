@@ -57,27 +57,21 @@ If you don’t already have Homebrew, open Terminal and run:
 Then make sure `brew` is on your PATH (Homebrew will print the exact command for your machine).
 
 ### 2) Install Bun
-With Homebrew:
+Install everything SyllabusOps uses (recommended):
 ```sh
-brew install bun
+brew install bun codex poppler
 ```
+
+What this installs (and why):
+- `bun`: runtime + package manager for the server + web UI
+- `codex`: powers the default “sign in with ChatGPT” provider via `codex app-server`
+- `poppler`: provides `pdftotext` for higher-quality PDF text extraction (slides/textbooks)
 
 Verify:
 ```sh
 bun --version
-```
-
-### 3) (Recommended) Install Codex CLI for “sign in with ChatGPT”
-This powers the default Codex provider via `codex app-server`:
-```sh
-brew install codex
 codex --version
-```
-
-### 4) Optional: PDF text extraction helper
-If you want the best PDF extraction quality (textbooks/slides), install Poppler:
-```sh
-brew install poppler
+pdftotext -v
 ```
 
 ## Quick start
