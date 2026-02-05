@@ -10,6 +10,7 @@ export type ScanOptions = {
   roots: string[];
   allowedExtensions: Set<string>;
   ignoreDirNames?: Set<string>;
+  ignoreAbsPrefixes?: string[];
   maxFiles?: number;
 };
 
@@ -47,10 +48,28 @@ function normalizeExt(ext: string): string {
   return ext.startsWith(".") ? ext.toLowerCase() : `.${ext.toLowerCase()}`;
 }
 
+function normalizeAbsPrefix(p: string): string {
+  const abs = path.resolve(p);
+  return abs.endsWith(path.sep) ? abs : `${abs}${path.sep}`;
+}
+
+function isUnderAnyPrefix(absPath: string, prefixes: string[]): boolean {
+  if (prefixes.length === 0) return false;
+  const abs = path.resolve(absPath);
+  // Compare with trailing separator on prefixes to avoid /foo/bar matching /foo/barbaz.
+  return prefixes.some((pre) => abs === pre.slice(0, -1) || abs.startsWith(pre));
+}
+
 async function* walkDir(
   dir: string,
-  opts: { allowedExtensions: Set<string>; ignoreDirNames: Set<string> }
+  opts: {
+    allowedExtensions: Set<string>;
+    ignoreDirNames: Set<string>;
+    ignoreAbsPrefixes: string[];
+  }
 ): AsyncGenerator<ScanFile> {
+  if (isUnderAnyPrefix(dir, opts.ignoreAbsPrefixes)) return;
+
   let entries: fs.Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -63,7 +82,9 @@ async function* walkDir(
     if (ent.isDirectory()) {
       if (opts.ignoreDirNames.has(name)) continue;
       if (name.startsWith(".")) continue;
-      yield* walkDir(path.join(dir, name), opts);
+      const child = path.join(dir, name);
+      if (isUnderAnyPrefix(child, opts.ignoreAbsPrefixes)) continue;
+      yield* walkDir(child, opts);
       continue;
     }
 
@@ -75,6 +96,7 @@ async function* walkDir(
     if (!opts.allowedExtensions.has(ext)) continue;
 
     const absolutePath = path.join(dir, name);
+    if (isUnderAnyPrefix(absolutePath, opts.ignoreAbsPrefixes)) continue;
     let st: { size: number; mtimeMs: number } | null = null;
     try {
       const stat = await fs.stat(absolutePath);
@@ -91,6 +113,9 @@ async function* walkDir(
 export async function scanOnce(opts: ScanOptions): Promise<ScanFile[]> {
   const ignoreDirNames = opts.ignoreDirNames ?? DEFAULT_IGNORE_DIRS;
   const maxFiles = opts.maxFiles ?? 50_000;
+  const ignoreAbsPrefixes = (opts.ignoreAbsPrefixes ?? [])
+    .filter(Boolean)
+    .map(normalizeAbsPrefix);
   const out: ScanFile[] = [];
 
   for (const root of opts.roots) {
@@ -105,6 +130,7 @@ export async function scanOnce(opts: ScanOptions): Promise<ScanFile[]> {
     for await (const file of walkDir(absRoot, {
       allowedExtensions: opts.allowedExtensions,
       ignoreDirNames,
+      ignoreAbsPrefixes,
     })) {
       out.push(file);
       if (out.length >= maxFiles) return out;

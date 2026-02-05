@@ -134,6 +134,7 @@ const watcher = createWatcher({
   queue,
   logger,
   shouldEnqueue: () => currentSettings.ingestEnabled,
+  getIgnoredAbsPrefixes: () => [currentSettings.unifiedDir, config.stateDir],
 });
 watcher.start();
 

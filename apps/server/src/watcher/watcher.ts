@@ -32,6 +32,7 @@ export function createWatcher(opts: {
   queue: JobQueue;
   logger: Logger;
   shouldEnqueue: () => boolean;
+  getIgnoredAbsPrefixes?: () => string[];
 }): Watcher {
   const gate = new StabilityGate({
     stableWindowMs: opts.config.stableWindowMs,
@@ -55,6 +56,7 @@ export function createWatcher(opts: {
       const files = await scanOnce({
         roots,
         allowedExtensions: DEFAULT_ALLOWED_EXTS,
+        ignoreAbsPrefixes: opts.getIgnoredAbsPrefixes ? opts.getIgnoredAbsPrefixes() : [],
       });
 
       lastScanAt = new Date().toISOString();
