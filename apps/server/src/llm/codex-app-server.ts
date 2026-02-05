@@ -59,11 +59,6 @@ function extractTurnId(raw: unknown): string {
   throw new Error("Unexpected turn/start response shape.");
 }
 
-type TurnCompletedPayload = {
-  turnId?: string;
-  status?: string;
-};
-
 export type CodexStatus = {
   ok: true;
   available: boolean;
@@ -223,41 +218,102 @@ export function createCodexAppServer(opts: { logger: Logger }) {
   }): Promise<T> {
     await ensureInitialized();
 
-    const turnTextParts = new Map<string, string>();
-    const completedAgentTexts: string[] = [];
+    const itemTextParts = new Map<string, string>();
+    const completedAssistantTexts: string[] = [];
+    let completed: { ok: true } | { ok: false; error: string } | null = null;
+
+    function appendDelta(itemId: string, text: string) {
+      const prev = itemTextParts.get(itemId) ?? "";
+      itemTextParts.set(itemId, `${prev}${text}`);
+    }
+
+    function extractItemText(item: unknown): string {
+      const parsed = z
+        .object({
+          id: z.string().min(1),
+          type: z.string().min(1),
+          content: z
+            .array(z.object({ type: z.string(), text: z.string().optional() }).passthrough())
+            .optional(),
+          text: z.string().optional(),
+        })
+        .passthrough()
+        .safeParse(item);
+      if (!parsed.success) return "";
+
+      const fromContent =
+        parsed.data.content
+          ?.map((c) => (typeof c.text === "string" ? c.text : ""))
+          .filter(Boolean)
+          .join("\n") ?? "";
+      const fromDelta = itemTextParts.get(parsed.data.id) ?? "";
+      const fromText = parsed.data.text ?? "";
+      return `${fromContent || fromText || fromDelta}`.trim();
+    }
 
     const unsub = rpc.subscribe((method, params) => {
-      if (method === "item/agentMessage/delta") {
+      if (method === "item/delta") {
         const p = z
           .object({
-            itemId: z.string().min(1),
-            delta: z.object({ text: z.string().optional() }).passthrough(),
+            itemId: z.string().min(1).optional(),
+            item: z.object({ id: z.string().min(1) }).passthrough().optional(),
+            delta: z.object({ text: z.string().optional() }).passthrough().optional(),
           })
+          .passthrough()
           .safeParse(params);
         if (!p.success) return;
-        const prev = turnTextParts.get(p.data.itemId) ?? "";
-        const next = `${prev}${p.data.delta.text ?? ""}`;
-        turnTextParts.set(p.data.itemId, next);
+        const id = p.data.itemId ?? p.data.item?.id;
+        const text = p.data.delta?.text;
+        if (id && typeof text === "string") appendDelta(id, text);
         return;
       }
+
       if (method === "item/completed") {
         const p = z
           .object({
-            itemId: z.string().min(1),
-            item: z
+            item: z.object({ id: z.string().min(1), type: z.string().min(1) }).passthrough(),
+          })
+          .passthrough()
+          .safeParse(params);
+        if (!p.success) return;
+        const t = p.data.item.type.toLowerCase();
+        if (!t.includes("assistant")) return;
+        const txt = extractItemText(p.data.item);
+        if (txt) completedAssistantTexts.push(txt);
+        return;
+      }
+
+      if (method === "turn/completed") {
+        const p = z
+          .object({
+            turn: z
               .object({
-                type: z.string(),
-                text: z.string().optional(),
+                id: z.string().min(1),
+                status: z.string().min(1),
+                error: z
+                  .object({
+                    message: z.string().optional(),
+                    additionalDetails: z.string().nullable().optional(),
+                  })
+                  .passthrough()
+                  .nullable()
+                  .optional(),
               })
               .passthrough(),
           })
+          .passthrough()
           .safeParse(params);
         if (!p.success) return;
-        if (p.data.item.type !== "agentMessage") return;
-        const fromDelta = turnTextParts.get(p.data.itemId);
-        const txt = (p.data.item.text ?? fromDelta ?? "").trim();
-        if (txt) completedAgentTexts.push(txt);
-        return;
+        const status = p.data.turn.status.toLowerCase();
+        if (status === "failed") {
+          const msg =
+            p.data.turn.error?.message ??
+            p.data.turn.error?.additionalDetails ??
+            "Codex turn failed.";
+          completed = { ok: false, error: msg };
+        } else {
+          completed = { ok: true };
+        }
       }
     });
 
@@ -279,36 +335,14 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       const turnId = extractTurnId(turnStart);
 
       // Wait for turn completion.
-      await new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error("Codex turn timed out."));
-        }, 120_000);
+      const startedAt = Date.now();
+      while (!completed && Date.now() - startedAt < 120_000) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      if (!completed) throw new Error("Codex turn timed out.");
+      if (!completed.ok) throw new Error(completed.error);
 
-        const unsub2 = rpc.subscribe((method, params) => {
-          if (method !== "turn/completed") return;
-          const p1 = z
-            .object({ turnId: z.string().min(1) })
-            .passthrough()
-            .safeParse(params as TurnCompletedPayload);
-          const completedId = p1.success
-            ? p1.data.turnId
-            : z
-                .object({ turn: z.object({ id: z.string().min(1) }) })
-                .passthrough()
-                .safeParse(params).success
-              ? z
-                  .object({ turn: z.object({ id: z.string().min(1) }) })
-                  .parse(params).turn.id
-              : null;
-          if (!completedId) return;
-          if (completedId !== turnId) return;
-          clearTimeout(timeout);
-          unsub2();
-          resolve();
-        });
-      });
-
-      const text = completedAgentTexts.at(-1)?.trim();
+      const text = completedAssistantTexts.at(-1)?.trim();
       if (!text) throw new Error("Codex returned no agentMessage text.");
 
       let json: unknown;
