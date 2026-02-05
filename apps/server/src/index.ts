@@ -60,6 +60,7 @@ const SettingsSchema = z.object({
   openaiModel: z.string().min(1).default("gpt-4o-mini"),
   openaiReasoningEffort: z.enum(["low", "medium", "high"]).optional(),
   codexModel: z.string().min(1).default("gpt-5.1-codex"),
+  codexEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
 });
 type Settings = z.infer<typeof SettingsSchema>;
 
@@ -84,6 +85,7 @@ async function readSettings(): Promise<Settings> {
     openaiModel: "gpt-4o-mini",
     openaiReasoningEffort: undefined,
     codexModel: "gpt-5.1-codex",
+    codexEffort: undefined,
   };
 }
 
@@ -423,6 +425,7 @@ const runner = createJobRunner({
           }
           raw = await codex.jsonSchemaTurn<unknown>({
             model: currentSettings.codexModel,
+            effort: currentSettings.codexEffort,
             system,
             user,
             schemaName: "syllabusops_task_suggestions_v1",
@@ -480,6 +483,25 @@ const app = new Elysia()
     });
   })
   .get("/api/logs", () => ({ logs: logger.getRecent(300) }))
+  .get("/api/codex/models", async () => {
+    const st = await codex.status();
+    if (!st.available) {
+      return new Response(JSON.stringify({ error: "CODEX_UNAVAILABLE" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    try {
+      const list = await codex.listModels();
+      return list;
+    } catch (e: unknown) {
+      const msg = String((e as Error)?.message ?? e);
+      return new Response(JSON.stringify({ error: "CODEX_MODELS_FAILED", detail: msg }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+  })
   .get("/api/openai/models", async () => {
     let headers: { Authorization: string };
     try {
@@ -738,6 +760,7 @@ const app = new Elysia()
       llmMaxOutputTokens: parsed.llmMaxOutputTokens,
       openaiOAuthConfigured: Boolean(parsed.openaiOAuth?.clientId),
       codexModel: parsed.codexModel,
+      codexEffort: parsed.codexEffort ?? null,
       openaiModel: parsed.openaiModel,
       openaiReasoningEffort: parsed.openaiReasoningEffort ?? null,
     });

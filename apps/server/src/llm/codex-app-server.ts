@@ -98,6 +98,60 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     initialized = true;
   }
 
+  async function listModels(): Promise<{
+    models: Array<{
+      id: string;
+      displayName?: string;
+      description?: string;
+      isDefault?: boolean;
+      defaultReasoningEffort?: string;
+      supportedReasoningEfforts?: Array<{ reasoningEffort: string; description?: string }>;
+    }>;
+  }> {
+    await ensureInitialized();
+    const raw = await rpc.request("model/list", {});
+    const parsed = z
+      .object({
+        data: z
+          .array(
+            z
+              .object({
+                id: z.string().min(1),
+                displayName: z.string().optional(),
+                description: z.string().optional(),
+                isDefault: z.boolean().optional(),
+                defaultReasoningEffort: z.string().optional(),
+                supportedReasoningEfforts: z
+                  .array(
+                    z
+                      .object({
+                        reasoningEffort: z.string().min(1),
+                        description: z.string().optional(),
+                      })
+                      .passthrough()
+                  )
+                  .optional(),
+              })
+              .passthrough()
+          )
+          .default([]),
+      })
+      .passthrough()
+      .parse(raw);
+
+    const models = parsed.data
+      .map((m) => ({
+        id: m.id,
+        displayName: m.displayName,
+        description: m.description,
+        isDefault: m.isDefault,
+        defaultReasoningEffort: m.defaultReasoningEffort,
+        supportedReasoningEfforts: m.supportedReasoningEfforts,
+      }))
+      .sort((a, b) => a.id.localeCompare(b.id));
+    return { models };
+  }
+
   async function accountRead() {
     await ensureInitialized();
     const raw = await rpc.request("account/read");
@@ -161,6 +215,7 @@ export function createCodexAppServer(opts: { logger: Logger }) {
 
   async function jsonSchemaTurn<T>(input: {
     model: string;
+    effort?: string;
     system: string;
     user: string;
     schema: unknown; // JSON schema
@@ -218,6 +273,7 @@ export function createCodexAppServer(opts: { logger: Logger }) {
         threadId,
         input: [{ type: "text", text: fullPrompt }],
         outputSchema: { name: input.schemaName, schema: input.schema },
+        ...(input.effort ? { effort: input.effort } : {}),
       });
 
       const turnId = extractTurnId(turnStart);
@@ -267,5 +323,5 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     }
   }
 
-  return { status, loginStartChatgpt, logout, jsonSchemaTurn };
+  return { status, loginStartChatgpt, logout, listModels, jsonSchemaTurn };
 }
