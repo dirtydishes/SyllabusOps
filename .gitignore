@@ -4,5 +4,6 @@ dist/
 .vite/
 .cache/
 .syllabusops/
+.syllabusops.__archive__*/
 coverage/
 *.log
