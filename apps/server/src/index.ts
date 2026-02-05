@@ -10,6 +10,7 @@ import { Elysia } from "elysia";
 import { z } from "zod";
 import { loadConfig } from "./config";
 import { openDb } from "./db";
+import { extractTranscriptToCache } from "./extract/transcript";
 import {
   FsSchemas,
   getRevisionDir,
@@ -111,6 +112,42 @@ const runner = createJobRunner({
           logger,
         });
         if (!res.ok) throw new Error(res.error);
+
+        if (res.kind === "transcript") {
+          queue.enqueue({
+            jobType: "extract_transcript",
+            priority: 2,
+            payload: { canonicalPath: res.copiedTo, sha256: res.sha256 },
+          });
+        }
+        return "succeed";
+      }
+      case "extract_transcript": {
+        const payload = JSON.parse(job.payload_json) as {
+          canonicalPath?: unknown;
+          sha256?: unknown;
+        };
+        const canonicalPath =
+          typeof payload.canonicalPath === "string"
+            ? payload.canonicalPath
+            : null;
+        const sha256 =
+          typeof payload.sha256 === "string" ? payload.sha256 : null;
+        if (!canonicalPath || !sha256) {
+          throw new Error(
+            "Invalid extract_transcript payload: canonicalPath and sha256 required."
+          );
+        }
+        const out = await extractTranscriptToCache({
+          canonicalPath,
+          sha256,
+          stateDir: config.stateDir,
+        });
+        logger.info("extract.transcript.cached", {
+          canonicalPath,
+          sha256,
+          textPath: out.textPath,
+        });
         return "succeed";
       }
     }

@@ -19,6 +19,7 @@ export type IngestFileResult =
       sha256: string;
       sessionDate: string;
       courseSlug: string;
+      kind: "transcript" | "slides" | "unknown";
     }
   | { ok: false; error: string };
 
@@ -108,5 +109,13 @@ export async function ingestFile(opts: {
     courseSlug,
   });
 
-  return { ok: true, copiedTo, metaPath, sha256, sessionDate, courseSlug };
+  return {
+    ok: true,
+    copiedTo,
+    metaPath,
+    sha256,
+    sessionDate,
+    courseSlug,
+    kind,
+  };
 }
