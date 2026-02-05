@@ -56,8 +56,9 @@ Open the dashboard:
 
 ## First-time setup (non-coder friendly)
 1) Open **Settings**
-2) Set **Unified directory** (where SyllabusOps stores its organized library), e.g.:
-   - `/Users/kell/Library/Mobile Documents/com~apple~CloudDocs/School/Unified_Clean`
+2) Set **Unified directory** (where SyllabusOps stores its organized library):
+   - Recommended (default): `/Users/kell/Library/Mobile Documents/com~apple~CloudDocs/School/Unified`
+   - If you want a clean reset without touching anything existing: create and use `Unified_Clean` instead.
 3) Set **Watch Roots** (one per line)
    - Tip: don’t watch a messy top-level “School/” folder. Watch your *course folders* instead.
 4) Choose an **LLM Provider**
