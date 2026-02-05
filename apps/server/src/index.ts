@@ -31,6 +31,7 @@ import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
 import { EnqueueJobRequestSchema, JobStatusSchema, JobTypeSchema } from "./jobs/schemas";
 import { scanCourseDetail, scanCourses, scanSession } from "./library/library";
+import { createCodexAppServer } from "./llm/codex-app-server";
 import { openAiJsonSchema } from "./llm/openai-responses";
 import { Logger } from "./logger";
 import { keychainStore } from "./secrets/keychain";
@@ -52,9 +53,11 @@ const SettingsSchema = z.object({
   unifiedDir: z.string().min(1),
   watchRoots: z.array(z.string()).default([]),
   ingestEnabled: z.boolean().default(false),
+  llmProvider: z.enum(["openai", "codex"]).default("openai"),
   openaiOAuth: OpenAiOAuthConfigSchema.optional(),
   openaiApiBaseUrl: z.string().url().default("https://api.openai.com/v1"),
   openaiModel: z.string().min(1).default("gpt-4o-mini"),
+  codexModel: z.string().min(1).default("gpt-5.1-codex"),
 });
 type Settings = z.infer<typeof SettingsSchema>;
 
@@ -72,9 +75,11 @@ async function readSettings(): Promise<Settings> {
     unifiedDir: config.unifiedDir,
     watchRoots: config.watchRoots,
     ingestEnabled: false,
+    llmProvider: "openai",
     openaiOAuth: undefined,
     openaiApiBaseUrl: "https://api.openai.com/v1",
     openaiModel: "gpt-4o-mini",
+    codexModel: "gpt-5.1-codex",
   };
 }
 
@@ -97,6 +102,8 @@ const openaiAuth = createOpenAiAuth({
   logger,
   now: () => new Date(),
 });
+
+const codex = createCodexAppServer({ logger });
 
 const watcher = createWatcher({
   config: {
@@ -271,25 +278,24 @@ const runner = createJobRunner({
           );
         }
 
-        if (!currentSettings.openaiModel?.trim()) {
-          queue.block(job.id, "OPENAI_MODEL_REQUIRED");
-          logger.warn("job.blocked", {
-            job_id: job.id,
-            reason: "OPENAI_MODEL_REQUIRED",
-          });
-          return "skip";
-        }
-
-        let headers: { Authorization: string };
-        try {
-          headers = await openaiAuth.getAuthHeaders();
-        } catch {
-          queue.block(job.id, "OPENAI_AUTH_REQUIRED");
-          logger.warn("job.blocked", {
-            job_id: job.id,
-            reason: "OPENAI_AUTH_REQUIRED",
-          });
-          return "skip";
+        if (currentSettings.llmProvider === "openai") {
+          if (!currentSettings.openaiModel?.trim()) {
+            queue.block(job.id, "OPENAI_MODEL_REQUIRED");
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "OPENAI_MODEL_REQUIRED",
+            });
+            return "skip";
+          }
+        } else {
+          if (!currentSettings.codexModel?.trim()) {
+            queue.block(job.id, "CODEX_MODEL_REQUIRED");
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "CODEX_MODEL_REQUIRED",
+            });
+            return "skip";
+          }
         }
 
         const scanned = await scanSession({
@@ -375,16 +381,49 @@ const runner = createJobRunner({
           `Session date: ${sessionDate}\n\n` +
           contextParts.join("\n");
 
-        const raw = await openAiJsonSchema<unknown>({
-          apiBaseUrl: currentSettings.openaiApiBaseUrl,
-          model: currentSettings.openaiModel,
-          headers,
-          schemaName: "syllabusops_task_suggestions_v1",
-          schema: tasksJsonSchema,
-          system,
-          user,
-          maxOutputTokens: 1200,
-        });
+        let raw: unknown;
+        if (currentSettings.llmProvider === "openai") {
+          let headers: { Authorization: string };
+          try {
+            headers = await openaiAuth.getAuthHeaders();
+          } catch {
+            queue.block(job.id, "OPENAI_AUTH_REQUIRED");
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "OPENAI_AUTH_REQUIRED",
+            });
+            return "skip";
+          }
+          raw = await openAiJsonSchema<unknown>({
+            apiBaseUrl: currentSettings.openaiApiBaseUrl,
+            model: currentSettings.openaiModel,
+            headers,
+            schemaName: "syllabusops_task_suggestions_v1",
+            schema: tasksJsonSchema,
+            system,
+            user,
+            maxOutputTokens: 1200,
+          });
+        } else {
+          const st = await codex.status();
+          if (!st.available) {
+            queue.block(job.id, "CODEX_UNAVAILABLE");
+            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_UNAVAILABLE" });
+            return "skip";
+          }
+          if (st.requiresOpenaiAuth && !st.connected) {
+            queue.block(job.id, "CODEX_AUTH_REQUIRED");
+            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_AUTH_REQUIRED" });
+            return "skip";
+          }
+          raw = await codex.jsonSchemaTurn<unknown>({
+            model: currentSettings.codexModel,
+            system,
+            user,
+            schemaName: "syllabusops_task_suggestions_v1",
+            schema: tasksJsonSchema,
+          });
+        }
 
         const parsed = TaskSuggestionsSchema.parse(raw);
         const tasksStore = createTasksStore(db);
@@ -436,6 +475,21 @@ const app = new Elysia()
     });
   })
   .get("/api/logs", () => ({ logs: logger.getRecent(300) }))
+  .get("/api/auth/codex/status", async () => await codex.status())
+  .post("/api/auth/codex/start", async () => {
+    const res = await codex.loginStartChatgpt();
+    if (!res.ok) {
+      return new Response(JSON.stringify({ error: res.error }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return res;
+  })
+  .post("/api/auth/codex/logout", async () => {
+    await codex.logout();
+    return { ok: true };
+  })
   .get("/api/tasks", ({ query }) => {
     const q = z
       .object({
@@ -636,7 +690,10 @@ const app = new Elysia()
       unifiedDir: parsed.unifiedDir,
       watchRoots: parsed.watchRoots,
       ingestEnabled: parsed.ingestEnabled,
+      llmProvider: parsed.llmProvider,
       openaiOAuthConfigured: Boolean(parsed.openaiOAuth?.clientId),
+      codexModel: parsed.codexModel,
+      openaiModel: parsed.openaiModel,
     });
     return { ok: true };
   })
