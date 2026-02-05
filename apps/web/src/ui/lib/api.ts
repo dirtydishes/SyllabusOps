@@ -9,12 +9,15 @@ export type ApiStatus = {
 export type Settings = {
   unifiedDir: string;
   watchRoots: string[];
+  ingestEnabled: boolean;
 };
 
 export type FsEntry = { name: string; type: "file" | "dir" };
 export type FsListResponse = { path: string; entries: FsEntry[] };
 export type FsReadResponse = { path: string; content: string; sha256: string };
 export type FsWriteResponse = { path: string; sha256: string; savedAt: string };
+export type FsRevision = { file: string; savedAt: string | null };
+export type FsRevisionsResponse = { path: string; revisions: FsRevision[] };
 
 async function http<T>(
   input: RequestInfo | URL,
@@ -67,5 +70,24 @@ export async function fsWrite(
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ content, expectedSha256 }),
+  });
+}
+
+export async function fsRevisions(
+  relPath: string
+): Promise<FsRevisionsResponse> {
+  const url = new URL("/api/fs/revisions", window.location.origin);
+  url.searchParams.set("path", relPath);
+  return await http<FsRevisionsResponse>(url);
+}
+
+export async function fsRestore(
+  relPath: string,
+  revisionFile: string
+): Promise<FsWriteResponse> {
+  return await http<FsWriteResponse>("/api/fs/restore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path: relPath, revisionFile }),
   });
 }

@@ -3,7 +3,15 @@ import CodeMirror from "@uiw/react-codemirror";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { type FsEntry, fsList, fsRead, fsWrite } from "../lib/api";
+import {
+  type FsEntry,
+  type FsRevision,
+  fsList,
+  fsRead,
+  fsRestore,
+  fsRevisions,
+  fsWrite,
+} from "../lib/api";
 
 function joinPath(a: string, b: string): string {
   if (!a) return b;
@@ -20,6 +28,8 @@ export function EditorPage() {
   const [mode, setMode] = useState<"split" | "edit" | "preview">("split");
   const [status, setStatus] = useState<string>("Idle");
   const [error, setError] = useState<string | null>(null);
+  const [revisions, setRevisions] = useState<FsRevision[]>([]);
+  const [restoring, setRestoring] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,6 +58,8 @@ export function EditorPage() {
       setSelectedPath(relPath);
       setContent(r.content);
       setLoadedSha(r.sha256);
+      const rev = await fsRevisions(relPath);
+      setRevisions(rev.revisions);
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
     } finally {
@@ -62,9 +74,32 @@ export function EditorPage() {
     try {
       const r = await fsWrite(selectedPath, content, loadedSha);
       setLoadedSha(r.sha256);
+      const rev = await fsRevisions(selectedPath);
+      setRevisions(rev.revisions);
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
     } finally {
+      setStatus("Idle");
+    }
+  }
+
+  async function restoreRevision(revisionFile: string) {
+    if (!selectedPath) return;
+    const ok = window.confirm(
+      `Restore revision ${revisionFile}? This will overwrite the current file.`
+    );
+    if (!ok) return;
+
+    setError(null);
+    setRestoring(revisionFile);
+    setStatus("Restoring…");
+    try {
+      await fsRestore(selectedPath, revisionFile);
+      await openFile(selectedPath);
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setRestoring(null);
       setStatus("Idle");
     }
   }
@@ -198,6 +233,32 @@ export function EditorPage() {
                   </ReactMarkdown>
                 </div>
               ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="card revisions">
+          <div className="card-title">Revisions</div>
+          {!selectedPath ? (
+            <div className="muted">Open a file to see snapshots.</div>
+          ) : revisions.length === 0 ? (
+            <div className="muted">No revisions yet.</div>
+          ) : (
+            <div className="revisions-list">
+              {revisions.slice(0, 30).map((r) => (
+                <div key={r.file} className="revision-row">
+                  <div className="mono">{r.file}</div>
+                  <div className="muted mono">{r.savedAt ?? ""}</div>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={status !== "Idle" || restoring === r.file}
+                    onClick={() => void restoreRevision(r.file)}
+                  >
+                    {restoring === r.file ? "Restoring…" : "Restore"}
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </div>
