@@ -32,6 +32,29 @@ function isSummaryMarkdown(relPath: string): boolean {
   return p.includes("summary");
 }
 
+function safeUrlTransform(url: string): string {
+  const trimmed = url.trim();
+  if (!trimmed) return "";
+
+  // Allow relative URLs (no protocol) - keep as-is.
+  const looksRelative =
+    trimmed.startsWith("/") ||
+    trimmed.startsWith("./") ||
+    trimmed.startsWith("../") ||
+    !trimmed.includes(":");
+  if (looksRelative) return trimmed;
+
+  try {
+    const parsed = new URL(trimmed);
+    const protocol = parsed.protocol.toLowerCase();
+    if (protocol === "http:" || protocol === "https:" || protocol === "mailto:")
+      return trimmed;
+    return "";
+  } catch {
+    return "";
+  }
+}
+
 export function EditorPage() {
   const [searchParams] = useSearchParams();
   const [cwd, setCwd] = useState("");
@@ -295,7 +318,20 @@ export function EditorPage() {
                       Edit
                     </button>
                   ) : null}
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    skipHtml
+                    urlTransform={safeUrlTransform}
+                    components={{
+                      a: (props) => (
+                        <a
+                          {...props}
+                          target="_blank"
+                          rel="noreferrer noopener"
+                        />
+                      ),
+                    }}
+                  >
                     {content}
                   </ReactMarkdown>
                 </div>

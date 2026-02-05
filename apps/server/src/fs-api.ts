@@ -8,13 +8,20 @@ import type { Logger } from "./logger";
 const AllowedExt = z.enum([".md", ".txt", ".json", ".yaml", ".yml"]);
 const FsPathQuery = z.object({ path: z.string() });
 
+function normalizeRelPath(input: string): string {
+  const raw = input.replaceAll("\\", "/").trim();
+  const normalized = path.posix.normalize(raw);
+  return normalized.replace(/^\/+/, "").replace(/^\.\//, "");
+}
+
 function ensureExtAllowed(filePath: string): boolean {
   const ext = path.extname(filePath).toLowerCase();
   return AllowedExt.safeParse(ext).success;
 }
 
 export async function listDir(opts: { unifiedDir: string; relPath: string }) {
-  if (!looksLikeRelativePath(opts.relPath)) {
+  const relPath = opts.relPath ? normalizeRelPath(opts.relPath) : "";
+  if (relPath && !looksLikeRelativePath(relPath)) {
     return {
       ok: false as const,
       status: 400,
@@ -22,7 +29,7 @@ export async function listDir(opts: { unifiedDir: string; relPath: string }) {
     };
   }
 
-  const resolved = resolveWithinRoot(opts.unifiedDir, opts.relPath);
+  const resolved = resolveWithinRoot(opts.unifiedDir, relPath);
   if (!resolved.ok)
     return { ok: false as const, status: 403, error: "FS_PATH_DENIED" };
 
@@ -31,7 +38,7 @@ export async function listDir(opts: { unifiedDir: string; relPath: string }) {
   });
   return {
     ok: true as const,
-    path: opts.relPath,
+    path: relPath,
     entries: entries
       .map((e) => ({
         name: e.name,
@@ -45,7 +52,8 @@ export async function readTextFile(opts: {
   unifiedDir: string;
   relPath: string;
 }) {
-  if (!looksLikeRelativePath(opts.relPath)) {
+  const relPath = normalizeRelPath(opts.relPath);
+  if (!looksLikeRelativePath(relPath)) {
     return {
       ok: false as const,
       status: 400,
@@ -53,7 +61,7 @@ export async function readTextFile(opts: {
     };
   }
 
-  const resolved = resolveWithinRoot(opts.unifiedDir, opts.relPath);
+  const resolved = resolveWithinRoot(opts.unifiedDir, relPath);
   if (!resolved.ok)
     return { ok: false as const, status: 403, error: "FS_PATH_DENIED" };
   if (!ensureExtAllowed(resolved.absolutePath)) {
@@ -72,7 +80,7 @@ export async function readTextFile(opts: {
   }
   return {
     ok: true as const,
-    path: opts.relPath,
+    path: relPath,
     content,
     sha256: sha256Hex(content),
   };
@@ -86,7 +94,8 @@ export async function writeTextFile(opts: {
   expectedSha256?: string;
   logger: Logger;
 }) {
-  if (!looksLikeRelativePath(opts.relPath)) {
+  const relPath = normalizeRelPath(opts.relPath);
+  if (!looksLikeRelativePath(relPath)) {
     return {
       ok: false as const,
       status: 400,
@@ -94,7 +103,7 @@ export async function writeTextFile(opts: {
     };
   }
 
-  const resolved = resolveWithinRoot(opts.unifiedDir, opts.relPath);
+  const resolved = resolveWithinRoot(opts.unifiedDir, relPath);
   if (!resolved.ok)
     return { ok: false as const, status: 403, error: "FS_PATH_DENIED" };
   if (!ensureExtAllowed(resolved.absolutePath)) {
@@ -123,15 +132,15 @@ export async function writeTextFile(opts: {
 
   await snapshotRevision({
     stateDir: opts.stateDir,
-    relPath: opts.relPath,
+    relPath,
     content: opts.content,
   });
 
   opts.logger.info("editor.save", {
-    path: opts.relPath,
+    path: relPath,
     bytes: opts.content.length,
   });
-  return { ok: true as const, path: opts.relPath, sha256, savedAt };
+  return { ok: true as const, path: relPath, sha256, savedAt };
 }
 
 async function snapshotRevision(opts: {
