@@ -13,6 +13,8 @@
 
 ## Current Status (2026-02-05)
 - Pipeline: watcher + stability gate, canonical copy + meta sidecars, transcript/PPTX/PDF extraction, per-course Unified layout
+- Ops controls: “Clean slate” reset (local state, optional Unified wipe) + watcher session reset for re-ingest without restarting the server
+- Course detection: infers course from watch-root structure (skips generic buckets like “Powerpoints/Homework”), strips Zoom-style date/time prefixes when present
 - AI auth:
   - OpenAI API: OAuth (PKCE) + Keychain + API-key fallback; Settings UI to configure + connect/disconnect
   - Codex: local `codex app-server` provider using ChatGPT/Codex sign-in (no API key); selectable LLM provider in Settings
@@ -25,7 +27,7 @@
   - Markdown editor (Edit/Preview/Split + save snapshots + restore)
 - Tasks: JSON-schema task suggestions + per-session approval workflow (Suggest/Approve/Dismiss/Done)
 - Beads: issues imported from `plan.md` and tracked in `.beads/issues.jsonl`
-- Next milestone: Security hardening (SyllabusOps-2mx.18)
+- Next milestone: Security hardening (SyllabusOps-2mx.18) + tests (SyllabusOps-2mx.19 / SyllabusOps-2mx.20)
 
 Welcome to Beads! This repository uses **Beads** for issue tracking - a modern, AI-native tool designed to live directly in your codebase alongside your code.
 
