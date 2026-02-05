@@ -41,6 +41,27 @@ function migrate(db: Db) {
       CREATE INDEX IF NOT EXISTS idx_jobs_status_next ON jobs(status, next_run_at, priority);
     `);
   });
+
+  applyMigration(db, "2026-02-05_tasks_v1", () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        course_slug TEXT NOT NULL,
+        session_date TEXT,
+        artifact_sha TEXT,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        due TEXT,
+        confidence REAL NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_tasks_course_status ON tasks(course_slug, status, created_at);
+      CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(course_slug, session_date, created_at);
+    `);
+  });
 }
 
 function applyMigration(db: Db, id: string, fn: () => void) {

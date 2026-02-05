@@ -220,3 +220,78 @@ export async function scanCourseDetail(opts: {
   };
 }
 
+export async function scanSession(opts: {
+  unifiedDir: string;
+  stateDir: string;
+  courseSlug: string;
+  sessionDate: string;
+}): Promise<
+  | { ok: true; course: { slug: string; name: string }; session: LibrarySession }
+  | { ok: false; error: "COURSE_NOT_FOUND" | "SESSION_NOT_FOUND" }
+> {
+  const courseDir = path.join(opts.unifiedDir, opts.courseSlug);
+  if (!(await fileExists(courseDir))) return { ok: false, error: "COURSE_NOT_FOUND" };
+
+  const year = opts.sessionDate.slice(0, 4);
+  const sessionAbs = path.join(courseDir, "raw", year, opts.sessionDate);
+  if (!(await fileExists(sessionAbs))) return { ok: false, error: "SESSION_NOT_FOUND" };
+
+  let fileNames: string[] = [];
+  try {
+    fileNames = (await fs.readdir(sessionAbs)).sort((a, b) => a.localeCompare(b));
+  } catch {
+    fileNames = [];
+  }
+
+  const artifacts: LibraryArtifact[] = [];
+  let courseName: string | null = null;
+
+  for (const fileName of fileNames) {
+    if (fileName.endsWith(".meta.json")) continue;
+    if (isHidden(fileName)) continue;
+
+    const abs = path.join(sessionAbs, fileName);
+    const metaPath = `${abs}.meta.json`;
+    if (!(await fileExists(metaPath))) continue;
+
+    let metaRaw: unknown;
+    try {
+      metaRaw = JSON.parse(await fs.readFile(metaPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const meta = ArtifactMetaSchema.safeParse(metaRaw);
+    if (!meta.success) continue;
+    if (!courseName) courseName = meta.data.detected.courseShort;
+
+    const ext = path.extname(fileName).toLowerCase();
+    const cacheType = inferCacheType({ kind: meta.data.kind, ext });
+    const extractedTextAvailable = cacheType
+      ? await fileExists(
+          path.join(opts.stateDir, "cache", cacheType, `${meta.data.sha256}.txt`)
+        )
+      : false;
+
+    const relPath = relFromUnified(opts.unifiedDir, abs);
+    const artifactSummaryPath = `${opts.courseSlug}/generated/artifacts/${meta.data.sha256}/summary.md`;
+
+    artifacts.push({
+      id: meta.data.sha256,
+      kind: meta.data.kind,
+      fileName,
+      relPath,
+      sha256: meta.data.sha256,
+      ingestedAt: meta.data.ingestedAt,
+      sourcePath: meta.data.sourcePath,
+      ext,
+      cache: { type: cacheType, extractedTextAvailable },
+      generated: { artifactSummaryPath },
+    });
+  }
+
+  return {
+    ok: true,
+    course: { slug: opts.courseSlug, name: courseName ?? opts.courseSlug },
+    session: { date: opts.sessionDate, artifacts },
+  };
+}

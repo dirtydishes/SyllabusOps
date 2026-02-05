@@ -30,10 +30,12 @@ import { ingestFile } from "./ingest/ingest-file";
 import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
 import { EnqueueJobRequestSchema, JobStatusSchema } from "./jobs/schemas";
-import { scanCourseDetail, scanCourses } from "./library/library";
+import { scanCourseDetail, scanCourses, scanSession } from "./library/library";
+import { openAiJsonSchema } from "./llm/openai-responses";
 import { Logger } from "./logger";
 import { keychainStore } from "./secrets/keychain";
 import { SseHub } from "./sse";
+import { createTasksStore } from "./tasks/store";
 import { createWatcher } from "./watcher/watcher";
 
 const config = loadConfig();
@@ -51,6 +53,8 @@ const SettingsSchema = z.object({
   watchRoots: z.array(z.string()).default([]),
   ingestEnabled: z.boolean().default(false),
   openaiOAuth: OpenAiOAuthConfigSchema.optional(),
+  openaiApiBaseUrl: z.string().url().default("https://api.openai.com/v1"),
+  openaiModel: z.string().min(1).default("gpt-4o-mini"),
 });
 type Settings = z.infer<typeof SettingsSchema>;
 
@@ -69,6 +73,8 @@ async function readSettings(): Promise<Settings> {
     watchRoots: config.watchRoots,
     ingestEnabled: false,
     openaiOAuth: undefined,
+    openaiApiBaseUrl: "https://api.openai.com/v1",
+    openaiModel: "gpt-4o-mini",
   };
 }
 
@@ -250,6 +256,158 @@ const runner = createJobRunner({
         });
         return "succeed";
       }
+      case "suggest_tasks": {
+        const payload = JSON.parse(job.payload_json) as {
+          courseSlug?: unknown;
+          sessionDate?: unknown;
+        };
+        const courseSlug =
+          typeof payload.courseSlug === "string" ? payload.courseSlug : null;
+        const sessionDate =
+          typeof payload.sessionDate === "string" ? payload.sessionDate : null;
+        if (!courseSlug || !sessionDate) {
+          throw new Error(
+            "Invalid suggest_tasks payload: courseSlug and sessionDate required."
+          );
+        }
+
+        if (!currentSettings.openaiModel?.trim()) {
+          queue.block(job.id, "OPENAI_MODEL_REQUIRED");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "OPENAI_MODEL_REQUIRED",
+          });
+          return "skip";
+        }
+
+        let headers: { Authorization: string };
+        try {
+          headers = await openaiAuth.getAuthHeaders();
+        } catch {
+          queue.block(job.id, "OPENAI_AUTH_REQUIRED");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "OPENAI_AUTH_REQUIRED",
+          });
+          return "skip";
+        }
+
+        const scanned = await scanSession({
+          unifiedDir: currentSettings.unifiedDir,
+          stateDir: config.stateDir,
+          courseSlug,
+          sessionDate,
+        });
+        if (!scanned.ok) {
+          queue.block(job.id, scanned.error);
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: scanned.error,
+          });
+          return "skip";
+        }
+
+        const maxCharsPerArtifact = 35_000;
+        const contextParts: string[] = [];
+        for (const a of scanned.session.artifacts) {
+          if (!a.cache.type || !a.cache.extractedTextAvailable) continue;
+          const p = path.join(
+            config.stateDir,
+            "cache",
+            a.cache.type,
+            `${a.sha256}.txt`
+          );
+          let text = await fs.readFile(p, "utf8");
+          if (text.length > maxCharsPerArtifact)
+            text = `${text.slice(0, maxCharsPerArtifact)}\n`;
+          contextParts.push(
+            `=== ${a.kind.toUpperCase()} (${a.fileName}) ===\n${text.trim()}\n`
+          );
+        }
+
+        if (contextParts.length === 0) {
+          queue.block(job.id, "NO_EXTRACTED_TEXT");
+          logger.warn("job.blocked", { job_id: job.id, reason: "NO_EXTRACTED_TEXT" });
+          return "skip";
+        }
+
+        const TaskSuggestionsSchema = z.object({
+          tasks: z.array(
+            z.object({
+              title: z.string().min(1),
+              description: z.string().default(""),
+              due: z.string().nullable().optional(),
+              confidence: z.number().min(0).max(1).default(0.5),
+            })
+          ),
+        });
+
+        const tasksJsonSchema = {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            tasks: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  title: { type: "string" },
+                  description: { type: "string" },
+                  due: { type: ["string", "null"] },
+                  confidence: { type: "number" },
+                },
+                required: ["title", "description", "confidence", "due"],
+              },
+            },
+          },
+          required: ["tasks"],
+        } as const;
+
+        const system =
+          "You extract actionable school tasks from class materials. " +
+          "Return only JSON that matches the provided schema. " +
+          "Tasks should be specific and student-actionable (read, review, practice, homework, follow-up questions). " +
+          "If no tasks are present, return {\"tasks\": []}.";
+
+        const user =
+          `Course: ${scanned.course.name} (${courseSlug})\n` +
+          `Session date: ${sessionDate}\n\n` +
+          contextParts.join("\n");
+
+        const raw = await openAiJsonSchema<unknown>({
+          apiBaseUrl: currentSettings.openaiApiBaseUrl,
+          model: currentSettings.openaiModel,
+          headers,
+          schemaName: "syllabusops_task_suggestions_v1",
+          schema: tasksJsonSchema,
+          system,
+          user,
+          maxOutputTokens: 1200,
+        });
+
+        const parsed = TaskSuggestionsSchema.parse(raw);
+        const tasksStore = createTasksStore(db);
+        const inserted = tasksStore.insertSuggested(
+          parsed.tasks.map((t) => ({
+            courseSlug,
+            sessionDate,
+            artifactSha: null,
+            title: t.title,
+            description: t.description ?? "",
+            due: t.due ?? null,
+            confidence: t.confidence ?? 0.5,
+          }))
+        );
+
+        logger.info("tasks.suggested", {
+          courseSlug,
+          sessionDate,
+          inserted: inserted.inserted,
+        });
+
+        return "succeed";
+      }
     }
   },
 });
@@ -278,6 +436,58 @@ const app = new Elysia()
     });
   })
   .get("/api/logs", () => ({ logs: logger.getRecent(300) }))
+  .get("/api/tasks", ({ query }) => {
+    const q = z
+      .object({
+        courseSlug: z.string().min(1),
+        sessionDate: z.string().optional(),
+        status: z.enum(["suggested", "approved", "done", "dismissed"]).optional(),
+        limit: z.coerce.number().int().positive().optional(),
+      })
+      .parse(query);
+    const tasksStore = createTasksStore(db);
+    const tasks = tasksStore.list({
+      courseSlug: q.courseSlug,
+      sessionDate: q.sessionDate,
+      status: q.status,
+      limit: q.limit,
+    });
+    return { tasks };
+  })
+  .post("/api/tasks/suggest", ({ body }) => {
+    const b = z
+      .object({
+        courseSlug: z.string().min(1),
+        sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+      .parse(body);
+    const job = queue.enqueue({
+      jobType: "suggest_tasks",
+      payload: { courseSlug: b.courseSlug, sessionDate: b.sessionDate },
+      priority: 2,
+    });
+    logger.info("tasks.suggest_job_enqueued", {
+      job_id: job.id,
+      courseSlug: b.courseSlug,
+      sessionDate: b.sessionDate,
+    });
+    return { job };
+  })
+  .post("/api/tasks/:id/approve", ({ params }) => {
+    const id = z.object({ id: z.string().min(1) }).parse(params).id;
+    const tasksStore = createTasksStore(db);
+    return tasksStore.setStatus({ id, status: "approved" });
+  })
+  .post("/api/tasks/:id/dismiss", ({ params }) => {
+    const id = z.object({ id: z.string().min(1) }).parse(params).id;
+    const tasksStore = createTasksStore(db);
+    return tasksStore.setStatus({ id, status: "dismissed" });
+  })
+  .post("/api/tasks/:id/done", ({ params }) => {
+    const id = z.object({ id: z.string().min(1) }).parse(params).id;
+    const tasksStore = createTasksStore(db);
+    return tasksStore.setStatus({ id, status: "done" });
+  })
   .get("/api/courses", async () => ({
     courses: await scanCourses({
       unifiedDir: currentSettings.unifiedDir,
