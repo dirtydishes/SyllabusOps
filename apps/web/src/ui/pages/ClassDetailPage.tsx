@@ -83,8 +83,7 @@ export function ClassDetailPage() {
       const r = await getTasks({
         courseSlug,
         sessionDate: session.date,
-        status: "suggested",
-        limit: 200,
+        limit: 500,
       });
       setTasks(r.tasks);
     } catch (e: unknown) {
@@ -159,6 +158,16 @@ export function ClassDetailPage() {
       setTasksBusy(false);
     }
   }
+
+  const tasksByStatus = useMemo(() => {
+    const all = tasks ?? [];
+    return {
+      approved: all.filter((t) => t.status === "approved"),
+      suggested: all.filter((t) => t.status === "suggested"),
+      done: all.filter((t) => t.status === "done"),
+      dismissed: all.filter((t) => t.status === "dismissed"),
+    };
+  }, [tasks]);
 
   if (!courseSlug) {
     return (
@@ -330,7 +339,7 @@ export function ClassDetailPage() {
 
             <div className="card" style={{ marginTop: 12 }}>
               <div className="row row-between">
-                <div className="card-title">Suggested Tasks</div>
+                <div className="card-title">Tasks</div>
                 <div className="row">
                   <button
                     type="button"
@@ -346,51 +355,117 @@ export function ClassDetailPage() {
               {!tasks ? (
                 <div className="muted">Loading…</div>
               ) : tasks.length === 0 ? (
-                <div className="muted">No suggested tasks for this session yet.</div>
+                <div className="muted">No tasks for this session yet.</div>
               ) : (
-                <div className="task-list">
-                  {tasks.map((t) => (
-                    <div key={t.id} className="task-item">
-                      <div className="row row-between" style={{ width: "100%" }}>
-                        <div>
-                          <div className="mono">{t.title}</div>
-                          <div className="muted" style={{ marginTop: 4 }}>
-                            {t.description}
+                <>
+                  <div className="muted" style={{ marginTop: 4 }}>
+                    Approved tasks become your TODO list. Suggested tasks are waiting for approval.
+                  </div>
+
+                  {tasksByStatus.approved.length > 0 ? (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="row row-between">
+                        <div className="mono">TODO (Approved)</div>
+                        <span className="chip chip-ok">{tasksByStatus.approved.length}</span>
+                      </div>
+                      <div className="task-list" style={{ marginTop: 8 }}>
+                        {tasksByStatus.approved.map((t) => (
+                          <div key={t.id} className="task-item">
+                            <div className="row row-between" style={{ width: "100%" }}>
+                              <div>
+                                <div className="mono">{t.title}</div>
+                                <div className="muted" style={{ marginTop: 4 }}>
+                                  {t.description}
+                                </div>
+                                <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
+                                  {t.due ? `due: ${t.due}` : "no due"} • conf:{" "}
+                                  {t.confidence.toFixed(2)}
+                                </div>
+                              </div>
+                              <div className="row">
+                                <button
+                                  type="button"
+                                  className="button primary"
+                                  disabled={tasksBusy}
+                                  onClick={() => void setTaskStatus(t.id, "done")}
+                                >
+                                  Done
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button"
+                                  disabled={tasksBusy}
+                                  onClick={() => void setTaskStatus(t.id, "dismiss")}
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            </div>
                           </div>
-                          <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
-                            {t.due ? `due: ${t.due}` : "no due"} • conf: {t.confidence.toFixed(2)}
-                          </div>
-                        </div>
-                        <div className="row">
-                          <button
-                            type="button"
-                            className="button primary"
-                            disabled={tasksBusy}
-                            onClick={() => void setTaskStatus(t.id, "approve")}
-                          >
-                            Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="button"
-                            disabled={tasksBusy}
-                            onClick={() => void setTaskStatus(t.id, "done")}
-                          >
-                            Done
-                          </button>
-                          <button
-                            type="button"
-                            className="button"
-                            disabled={tasksBusy}
-                            onClick={() => void setTaskStatus(t.id, "dismiss")}
-                          >
-                            Dismiss
-                          </button>
-                        </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
+                  ) : null}
+
+                  {tasksByStatus.suggested.length > 0 ? (
+                    <div style={{ marginTop: 14 }}>
+                      <div className="row row-between">
+                        <div className="mono">Suggested</div>
+                        <span className="chip chip-neutral">{tasksByStatus.suggested.length}</span>
+                      </div>
+                      <div className="task-list" style={{ marginTop: 8 }}>
+                        {tasksByStatus.suggested.map((t) => (
+                          <div key={t.id} className="task-item">
+                            <div className="row row-between" style={{ width: "100%" }}>
+                              <div>
+                                <div className="mono">{t.title}</div>
+                                <div className="muted" style={{ marginTop: 4 }}>
+                                  {t.description}
+                                </div>
+                                <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
+                                  {t.due ? `due: ${t.due}` : "no due"} • conf:{" "}
+                                  {t.confidence.toFixed(2)}
+                                </div>
+                              </div>
+                              <div className="row">
+                                <button
+                                  type="button"
+                                  className="button primary"
+                                  disabled={tasksBusy}
+                                  onClick={() => void setTaskStatus(t.id, "approve")}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button"
+                                  disabled={tasksBusy}
+                                  onClick={() => void setTaskStatus(t.id, "done")}
+                                >
+                                  Done
+                                </button>
+                                <button
+                                  type="button"
+                                  className="button"
+                                  disabled={tasksBusy}
+                                  onClick={() => void setTaskStatus(t.id, "dismiss")}
+                                >
+                                  Dismiss
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {tasksByStatus.approved.length === 0 && tasksByStatus.suggested.length === 0 ? (
+                    <div className="muted" style={{ marginTop: 10 }}>
+                      No suggested or approved tasks. (Done/dismissed tasks are hidden here.)
+                    </div>
+                  ) : null}
+                </>
               )}
             </div>
           </div>
