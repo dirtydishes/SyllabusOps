@@ -60,7 +60,16 @@ export async function readTextFile(opts: {
     return { ok: false as const, status: 415, error: "Unsupported file type." };
   }
 
-  const content = await fs.readFile(resolved.absolutePath, "utf8");
+  let content: string;
+  try {
+    content = await fs.readFile(resolved.absolutePath, "utf8");
+  } catch (e: unknown) {
+    const code = (e as { code?: unknown })?.code;
+    if (code === "ENOENT") {
+      return { ok: false as const, status: 404, error: "FS_NOT_FOUND" };
+    }
+    throw e;
+  }
   return {
     ok: true as const,
     path: opts.relPath,

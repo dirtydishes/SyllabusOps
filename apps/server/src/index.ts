@@ -30,6 +30,7 @@ import { ingestFile } from "./ingest/ingest-file";
 import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
 import { EnqueueJobRequestSchema, JobStatusSchema } from "./jobs/schemas";
+import { scanCourseDetail, scanCourses } from "./library/library";
 import { Logger } from "./logger";
 import { keychainStore } from "./secrets/keychain";
 import { SseHub } from "./sse";
@@ -277,6 +278,66 @@ const app = new Elysia()
     });
   })
   .get("/api/logs", () => ({ logs: logger.getRecent(300) }))
+  .get("/api/courses", async () => ({
+    courses: await scanCourses({
+      unifiedDir: currentSettings.unifiedDir,
+      stateDir: config.stateDir,
+    }),
+  }))
+  .get("/api/courses/:courseSlug", async ({ params }) => {
+    const courseSlug = z
+      .object({ courseSlug: z.string().min(1) })
+      .parse(params).courseSlug;
+    const res = await scanCourseDetail({
+      unifiedDir: currentSettings.unifiedDir,
+      stateDir: config.stateDir,
+      courseSlug,
+      limitSessions: 0,
+    });
+    if (!res.ok) {
+      return new Response(JSON.stringify({ error: res.error }), { status: 404 });
+    }
+
+    return {
+      course: res.course,
+      sessions: res.sessions.map((s) => ({
+        date: s.date,
+        artifacts: s.artifacts,
+        generated: {
+          sessionSummaryPath: `${courseSlug}/generated/sessions/${s.date}/session-summary.md`,
+          sessionNotesPath: `${courseSlug}/notes/sessions/${s.date}/notes.md`,
+        },
+      })),
+    };
+  })
+  .get("/api/artifacts/extracted", async ({ query }) => {
+    const q = z
+      .object({
+        cache: z.enum(["transcripts", "pptx", "pdf"]),
+        sha: z.string().min(10),
+        maxChars: z.coerce.number().int().positive().optional(),
+      })
+      .parse(query);
+
+    const p = path.join(config.stateDir, "cache", q.cache, `${q.sha}.txt`);
+    let text: string;
+    try {
+      text = await fs.readFile(p, "utf8");
+    } catch (e: unknown) {
+      const code = (e as { code?: unknown })?.code;
+      if (code === "ENOENT") {
+        return new Response(JSON.stringify({ error: "EXTRACT_NOT_FOUND" }), {
+          status: 404,
+        });
+      }
+      throw e;
+    }
+
+    const maxChars = q.maxChars ?? 80_000;
+    const truncated = text.length > maxChars;
+    const out = truncated ? text.slice(0, maxChars) : text;
+    return { ok: true, truncated, text: out };
+  })
   .get("/api/auth/openai/status", async () =>
     OpenAiOAuthStatusSchema.parse(await openaiAuth.status())
   )
