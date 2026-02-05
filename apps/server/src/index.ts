@@ -18,6 +18,7 @@ import {
   readTextFile,
   writeTextFile,
 } from "./fs-api";
+import { ingestFile } from "./ingest/ingest-file";
 import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
 import { EnqueueJobRequestSchema, JobStatusSchema } from "./jobs/schemas";
@@ -32,25 +33,13 @@ const logger = new Logger({ logsDir: path.join(config.stateDir, "logs") });
 const sse = new SseHub();
 const db = await openDb({ stateDir: config.stateDir });
 const queue = createJobQueue(db);
-const runner = createJobRunner({ queue, logger });
-runner.start();
 
 logger.subscribe((evt) => sse.broadcast({ type: "log", payload: evt }));
-
-const watcher = createWatcher({
-  config: {
-    roots: (await readSettings()).watchRoots,
-    stableWindowMs: 5_000,
-    scanIntervalMs: 30_000,
-  },
-  queue,
-  logger,
-});
-watcher.start();
 
 const SettingsSchema = z.object({
   unifiedDir: z.string().min(1),
   watchRoots: z.array(z.string()).default([]),
+  ingestEnabled: z.boolean().default(false),
 });
 type Settings = z.infer<typeof SettingsSchema>;
 
@@ -64,7 +53,11 @@ async function readSettings(): Promise<Settings> {
   } catch {
     // ignore
   }
-  return { unifiedDir: config.unifiedDir, watchRoots: config.watchRoots };
+  return {
+    unifiedDir: config.unifiedDir,
+    watchRoots: config.watchRoots,
+    ingestEnabled: false,
+  };
 }
 
 async function writeSettings(next: Settings): Promise<void> {
@@ -72,16 +65,68 @@ async function writeSettings(next: Settings): Promise<void> {
   await fs.writeFile(settingsPath, JSON.stringify(next, null, 2), "utf8");
 }
 
+let currentSettings = await readSettings();
+
+const watcher = createWatcher({
+  config: {
+    roots: currentSettings.watchRoots,
+    stableWindowMs: 5_000,
+    scanIntervalMs: 30_000,
+  },
+  queue,
+  logger,
+  shouldEnqueue: () => currentSettings.ingestEnabled,
+});
+watcher.start();
+
+const runner = createJobRunner({
+  queue,
+  logger,
+  runJob: async (job) => {
+    switch (job.job_type) {
+      case "noop":
+        logger.info("job.noop", { job_id: job.id });
+        return "succeed";
+      case "ingest_file": {
+        if (!currentSettings.ingestEnabled) {
+          queue.block(job.id, "INGEST_DISABLED");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "INGEST_DISABLED",
+          });
+          return "skip";
+        }
+        const payload = JSON.parse(job.payload_json) as {
+          sourcePath?: unknown;
+        };
+        const sourcePath =
+          typeof payload.sourcePath === "string" ? payload.sourcePath : null;
+        if (!sourcePath)
+          throw new Error("Invalid ingest_file payload: sourcePath required.");
+
+        const res = await ingestFile({
+          sourcePath,
+          unifiedDir: currentSettings.unifiedDir,
+          pipelineVersion: "0.0.0-dev",
+          logger,
+        });
+        if (!res.ok) throw new Error(res.error);
+        return "succeed";
+      }
+    }
+  },
+});
+runner.start();
+
 const app = new Elysia()
   .use(cors())
   .get("/api/status", async () => {
-    const settings = await readSettings();
     const payload = {
       ok: true as const,
       version: "0.0.0-dev",
       now: new Date().toISOString(),
       stateDir: config.stateDir,
-      unifiedDir: settings.unifiedDir,
+      unifiedDir: currentSettings.unifiedDir,
     };
     return ApiStatusSchema.parse(payload);
   })
@@ -124,22 +169,23 @@ const app = new Elysia()
     logger.info("job.enqueued", { job_id: job.id, job_type: job.job_type });
     return { job };
   })
-  .get("/api/settings", async () => await readSettings())
+  .get("/api/settings", () => currentSettings)
   .post("/api/settings", async ({ body }) => {
     const parsed = SettingsSchema.parse(body);
     await writeSettings(parsed);
+    currentSettings = parsed;
     watcher.updateRoots(parsed.watchRoots);
     logger.info("settings.update", {
       unifiedDir: parsed.unifiedDir,
       watchRoots: parsed.watchRoots,
+      ingestEnabled: parsed.ingestEnabled,
     });
     return { ok: true };
   })
   .get("/api/fs/list", async ({ query }) => {
     const parsed = z.object({ path: z.string().default("") }).parse(query);
-    const settings = await readSettings();
     const res = await listDir({
-      unifiedDir: settings.unifiedDir,
+      unifiedDir: currentSettings.unifiedDir,
       relPath: parsed.path,
     });
     if (!res.ok)
@@ -150,9 +196,8 @@ const app = new Elysia()
   })
   .get("/api/fs/read", async ({ query }) => {
     const parsed = z.object({ path: z.string() }).parse(query);
-    const settings = await readSettings();
     const res = await readTextFile({
-      unifiedDir: settings.unifiedDir,
+      unifiedDir: currentSettings.unifiedDir,
       relPath: parsed.path,
     });
     if (!res.ok)
@@ -164,9 +209,8 @@ const app = new Elysia()
   .put("/api/fs/write", async ({ query, body }) => {
     const q = z.object({ path: z.string() }).parse(query);
     const b = FsWriteRequestSchema.parse(body);
-    const settings = await readSettings();
     const res = await writeTextFile({
-      unifiedDir: settings.unifiedDir,
+      unifiedDir: currentSettings.unifiedDir,
       stateDir: config.stateDir,
       relPath: q.path,
       content: b.content,
@@ -207,9 +251,8 @@ const app = new Elysia()
     const src = path.join(dir, b.revisionFile);
     const content = await fs.readFile(src, "utf8");
 
-    const settings = await readSettings();
     const res = await writeTextFile({
-      unifiedDir: settings.unifiedDir,
+      unifiedDir: currentSettings.unifiedDir,
       stateDir: config.stateDir,
       relPath: b.path,
       content,

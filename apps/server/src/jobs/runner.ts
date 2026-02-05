@@ -7,23 +7,10 @@ export type JobRunner = {
   stop: () => void;
 };
 
-async function handleJob(job: JobRecord, logger: Logger) {
-  switch (job.job_type) {
-    case "noop":
-      logger.info("job.noop", { job_id: job.id });
-      return;
-    case "ingest_file":
-      logger.info("job.ingest_file", {
-        job_id: job.id,
-        payload_json: job.payload_json,
-      });
-      return;
-  }
-}
-
 export function createJobRunner(opts: {
   queue: JobQueue;
   logger: Logger;
+  runJob: (job: JobRecord) => Promise<"succeed" | "skip">;
   pollMs?: number;
 }): JobRunner {
   const pollMs = opts.pollMs ?? 750;
@@ -43,9 +30,13 @@ export function createJobRunner(opts: {
         attempts: job.attempts,
       });
       try {
-        await handleJob(job, opts.logger);
-        opts.queue.succeed(job.id);
-        opts.logger.info("job.succeeded", { job_id: job.id });
+        const disposition = await opts.runJob(job);
+        if (disposition === "succeed") {
+          opts.queue.succeed(job.id);
+          opts.logger.info("job.succeeded", { job_id: job.id });
+        } else {
+          opts.logger.info("job.skipped", { job_id: job.id });
+        }
       } catch (e: unknown) {
         const msg = String((e as Error)?.message ?? e);
         opts.queue.fail(job.id, msg);

@@ -12,6 +12,7 @@ export type JobQueue = {
   claimNext: () => JobRecord | null;
   succeed: (id: string) => void;
   fail: (id: string, error: string) => void;
+  block: (id: string, reason: string) => void;
 };
 
 function newJobId(jobType: string): string {
@@ -102,6 +103,12 @@ export function createJobQueue(db: Db): JobQueue {
         WHERE id = ?
       `
       ).run(error.slice(0, 2000), nextRunAt, now, id);
+    },
+    block: (id: string, reason: string) => {
+      const now = new Date().toISOString();
+      db.query(
+        "UPDATE jobs SET status = 'blocked', last_error = ?, updated_at = ? WHERE id = ?"
+      ).run(reason.slice(0, 2000), now, id);
     },
   };
 }

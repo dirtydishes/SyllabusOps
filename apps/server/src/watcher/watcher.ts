@@ -31,6 +31,7 @@ export function createWatcher(opts: {
   config: WatcherConfig;
   queue: JobQueue;
   logger: Logger;
+  shouldEnqueue: () => boolean;
 }): Watcher {
   const gate = new StabilityGate({
     stableWindowMs: opts.config.stableWindowMs,
@@ -65,6 +66,7 @@ export function createWatcher(opts: {
         const isStable = gate.observe(f.absolutePath, f.stat, nowMs);
         if (!isStable) continue;
         stableCount++;
+        if (!opts.shouldEnqueue()) continue;
         if (enqueued.has(f.absolutePath)) continue;
         enqueued.add(f.absolutePath);
         enqueuedTotal++;
