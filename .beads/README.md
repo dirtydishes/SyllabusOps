@@ -13,9 +13,17 @@
 
 ## Current Status (2026-02-05)
 - Pipeline: watcher + stability gate, canonical copy + meta sidecars, transcript/PPTX/PDF extraction, per-course Unified layout
-- AI auth: OpenAI OAuth (PKCE) + Keychain + API-key fallback; Settings UI to configure + connect/disconnect
-- Dashboard: Overview, Classes (sessions + artifacts), Queue, Logs (filters + pause), Settings, Markdown editor (preview + revisions)
-- Tasks: OpenAI Responses JSON-schema task suggestions + per-session approval workflow
+- AI auth:
+  - OpenAI API: OAuth (PKCE) + Keychain + API-key fallback; Settings UI to configure + connect/disconnect
+  - Codex: local `codex app-server` provider using ChatGPT/Codex sign-in (no API key); selectable LLM provider in Settings
+- Dashboard:
+  - Overview shows queue counters + key paths
+  - Classes view (sessions timeline, artifacts list, extracted-text preview modal, editor deep-links)
+  - Queue view (job stats + filters + auto-refresh)
+  - Logs view (level/search filters, pause/resume, clear)
+  - Settings (watch roots, ingest toggle, LLM provider + auth)
+  - Markdown editor (Edit/Preview/Split + save snapshots + restore)
+- Tasks: JSON-schema task suggestions + per-session approval workflow (Suggest/Approve/Dismiss/Done)
 - Beads: issues imported from `plan.md` and tracked in `.beads/issues.jsonl`
 - Next milestone: Security hardening (SyllabusOps-2mx.18)
 
