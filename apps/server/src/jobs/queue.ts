@@ -88,7 +88,9 @@ export function createJobQueue(db: Db): JobQueue {
           .query(
             `
             SELECT * FROM jobs
-            WHERE status = 'queued' AND next_run_at <= ?
+            WHERE status IN ('queued', 'failed')
+              AND attempts < max_attempts
+              AND next_run_at <= ?
             ORDER BY priority ASC, next_run_at ASC
             LIMIT 1
           `
@@ -102,7 +104,7 @@ export function createJobQueue(db: Db): JobQueue {
             `
             UPDATE jobs
             SET status = 'running', attempts = attempts + 1, updated_at = ?
-            WHERE id = ? AND status = 'queued'
+            WHERE id = ? AND status IN ('queued', 'failed')
           `
           )
           .run(updatedAt, row.id);
@@ -123,7 +125,11 @@ export function createJobQueue(db: Db): JobQueue {
     },
     fail: (id: string, error: string) => {
       const now = new Date().toISOString();
-      const delaySeconds = 10;
+      const row = db
+        .query("SELECT attempts, max_attempts FROM jobs WHERE id = ?")
+        .get(id) as { attempts?: number; max_attempts?: number } | null;
+      const attempts = Number(row?.attempts ?? 1);
+      const delaySeconds = Math.min(10 * 2 ** Math.max(0, attempts - 1), 10 * 60);
       const nextRunAt = new Date(
         Date.now() + delaySeconds * 1000
       ).toISOString();
