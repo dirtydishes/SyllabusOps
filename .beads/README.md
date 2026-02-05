@@ -1,5 +1,32 @@
 # Beads - AI-Native Issue Tracking
 
+```
+╔═══════════════════════════════════════════╗
+║  ███████╗██╗   ██╗██╗     ██╗            ║
+║  ██╔════╝╚██╗ ██╔╝██║     ██║            ║
+║  ███████╗ ╚████╔╝ ██║     ██║            ║
+║  ╚════██║  ╚██╔╝  ██║     ██║            ║
+║  ███████║   ██║   ███████╗███████╗       ║
+║  ╚══════╝   ╚═╝   ╚══════╝╚══════╝       ║
+║                                           ║
+║   ██████╗ ██████╗ ███████╗                ║
+║  ██╔═══██╗██╔══██╗██╔════╝                ║
+║  ██║   ██║██████╔╝███████╗                ║
+║  ██║   ██║██╔═══╝ ╚════██║                ║
+║  ╚██████╔╝██║     ███████║                ║
+║   ╚═════╝ ╚═╝     ╚══════╝                ║
+║                                           ║
+║            S Y L L A B U S O P S           ║
+╚═══════════════════════════════════════════╝
+```
+
+## Current Status (2026-02-05)
+- Monorepo scaffolded (Bun + TypeScript) with `apps/server`, `apps/web`, `packages/core`, `packages/ui`
+- Server skeleton live: status/settings/logs/SSE + editor FS APIs + SQLite job queue
+- Web UI skeleton live: Overview, Logs, Settings, Markdown editor + preview
+- Beads issues imported from `plan.md` (MVP + Phase 2) and hooks installed
+- Next milestone: watcher + scan + stability gate (SyllabusOps-2mx.6)
+
 Welcome to Beads! This repository uses **Beads** for issue tracking - a modern, AI-native tool designed to live directly in your codebase alongside your code.
 
 ## What is Beads?
