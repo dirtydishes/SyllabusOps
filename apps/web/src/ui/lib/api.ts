@@ -10,6 +10,13 @@ export type Settings = {
   unifiedDir: string;
   watchRoots: string[];
   ingestEnabled: boolean;
+  openaiOAuth?: {
+    clientId: string;
+    authorizeUrl: string;
+    tokenUrl: string;
+    redirectUri: string;
+    scopes: string;
+  };
 };
 
 export type FsEntry = { name: string; type: "file" | "dir" };
