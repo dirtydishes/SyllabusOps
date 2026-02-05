@@ -393,9 +393,26 @@
 
 .editor-grid {
   display: grid;
-  grid-template-columns: 320px 1fr 360px;
+  grid-template-columns: minmax(240px, 320px) minmax(0, 1fr) minmax(260px, 360px);
   gap: 14px;
   align-items: start;
+}
+
+.editor-grid > .card {
+  min-width: 0;
+}
+
+.editorpane,
+.filetree,
+.revisions,
+.pane {
+  min-width: 0;
+}
+
+.editor-page .card-title.mono,
+.editor-page .mono {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .filetree {
@@ -477,6 +494,15 @@
   max-height: 70vh;
 }
 
+.pane.preview :is(p, li) {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.pane.preview pre {
+  white-space: pre-wrap;
+}
+
 .pane.preview :is(h1, h2, h3) {
   color: var(--text);
 }
@@ -510,6 +536,30 @@
   background: rgba(17, 17, 27, 0.25);
 }
 
+.revision-row .mono {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 .revision-row .button {
   width: fit-content;
+}
+
+@media (max-width: 1150px) {
+  .editor-grid {
+    grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+  }
+  .revisions {
+    height: auto;
+  }
+}
+
+@media (max-width: 850px) {
+  .editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .filetree,
+  .revisions {
+    height: auto;
+  }
 }

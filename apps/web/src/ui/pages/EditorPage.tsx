@@ -1,4 +1,5 @@
 import { markdown } from "@codemirror/lang-markdown";
+import { EditorView } from "@codemirror/view";
 import CodeMirror from "@uiw/react-codemirror";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
@@ -242,7 +243,7 @@ export function EditorPage() {
                   <CodeMirror
                     value={content}
                     height="70vh"
-                    extensions={[markdown()]}
+                    extensions={[markdown(), EditorView.lineWrapping]}
                     onChange={(v) => setContent(v)}
                     theme="dark"
                   />
