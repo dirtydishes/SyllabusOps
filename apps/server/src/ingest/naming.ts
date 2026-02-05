@@ -21,7 +21,80 @@ export function slugifyCourse(input: string): string {
 export function courseFromSourcePath(sourcePath: string): {
   courseShort: string;
   courseSlug: string;
+};
+export function courseFromSourcePath(
+  sourcePath: string,
+  watchRoot: string | null
+): {
+  courseShort: string;
+  courseSlug: string;
+};
+
+function toLooseSlug(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "");
+}
+
+const GENERIC_BUCKETS = new Set([
+  "school",
+  "class-transcripts",
+  "transcripts",
+  "transcript",
+  "transcripts-unified",
+  "powerpoints",
+  "presentations",
+  "slides",
+  "slide-decks",
+  "homework",
+  "journals",
+  "notes",
+  "materials",
+  "documents",
+  "readings",
+  "unified",
+]);
+
+function stripLeadingDateTimeFolder(name: string): string | null {
+  // Common Zoom folder patterns:
+  // - 2026-02-02 15.48.46 The Bionic Human
+  // - 2026-02-05 10.19.03 Disasters_ Geology vs. Hollywood
+  const m = name.match(
+    /^(\d{4}-\d{2}-\d{2})(?:[ _-]+(\d{2}[.:]\d{2}[.:]\d{2}))?[ _-]+(.+)$/
+  );
+  if (!m) return null;
+  const rest = m[3]?.trim();
+  return rest ? rest : null;
+}
+
+export function courseFromSourcePath(sourcePath: string, watchRoot: string | null = null): {
+  courseShort: string;
+  courseSlug: string;
 } {
+  if (watchRoot) {
+    const absRoot = path.resolve(watchRoot);
+    const absSrc = path.resolve(sourcePath);
+    const pre = absRoot.endsWith(path.sep) ? absRoot : `${absRoot}${path.sep}`;
+    if (absSrc === absRoot || absSrc.startsWith(pre)) {
+      const rel = path.relative(absRoot, absSrc);
+      const parts = rel.split(path.sep).filter(Boolean);
+      const dirParts = parts.slice(0, -1);
+      for (const seg of dirParts) {
+        const raw = seg.trim();
+        if (!raw) continue;
+        const rawSlug = toLooseSlug(raw);
+        if (GENERIC_BUCKETS.has(rawSlug)) continue;
+
+        const stripped = stripLeadingDateTimeFolder(raw);
+        const courseShort = stripped ?? raw;
+        const courseSlug = slugifyCourse(courseShort);
+        return { courseShort, courseSlug };
+      }
+    }
+  }
+
   const parent = path.basename(path.dirname(sourcePath));
   const courseShort = parent?.trim() ? parent.trim() : "Inbox";
   return { courseShort, courseSlug: slugifyCourse(courseShort) };

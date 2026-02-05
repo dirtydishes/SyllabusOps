@@ -76,7 +76,7 @@ export function createWatcher(opts: {
         opts.queue.enqueue({
           jobType: "ingest_file",
           priority: 2,
-          payload: { sourcePath: f.absolutePath, detectedAt: lastScanAt },
+          payload: { sourcePath: f.absolutePath, watchRoot: f.root, detectedAt: lastScanAt },
         });
       }
 

@@ -157,14 +157,18 @@ const runner = createJobRunner({
         }
         const payload = JSON.parse(job.payload_json) as {
           sourcePath?: unknown;
+          watchRoot?: unknown;
         };
         const sourcePath =
           typeof payload.sourcePath === "string" ? payload.sourcePath : null;
+        const watchRoot =
+          typeof payload.watchRoot === "string" ? payload.watchRoot : null;
         if (!sourcePath)
           throw new Error("Invalid ingest_file payload: sourcePath required.");
 
         const res = await ingestFile({
           sourcePath,
+          watchRoot,
           unifiedDir: currentSettings.unifiedDir,
           pipelineVersion: "0.0.0-dev",
           logger,

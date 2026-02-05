@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 export type ScanFile = {
+  root: string;
   absolutePath: string;
   stat: { size: number; mtimeMs: number };
 };
@@ -132,7 +133,7 @@ export async function scanOnce(opts: ScanOptions): Promise<ScanFile[]> {
       ignoreDirNames,
       ignoreAbsPrefixes,
     })) {
-      out.push(file);
+      out.push({ ...file, root: absRoot });
       if (out.length >= maxFiles) return out;
     }
   }

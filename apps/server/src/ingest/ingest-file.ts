@@ -69,6 +69,7 @@ async function findExistingIngestBySha(opts: {
 
 export async function ingestFile(opts: {
   sourcePath: string;
+  watchRoot?: string | null;
   unifiedDir: string;
   pipelineVersion: string;
   logger: Logger;
@@ -84,7 +85,10 @@ export async function ingestFile(opts: {
   if (!st) return { ok: false, error: "Missing stat." };
 
   const kind = detectArtifactKind(opts.sourcePath);
-  const { courseShort, courseSlug } = courseFromSourcePath(opts.sourcePath);
+  const { courseShort, courseSlug } = courseFromSourcePath(
+    opts.sourcePath,
+    opts.watchRoot ?? null
+  );
   const sessionDate = detectSessionDate({
     sourcePath: opts.sourcePath,
     mtimeMs: st.mtimeMs,
