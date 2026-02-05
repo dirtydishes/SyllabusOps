@@ -12,6 +12,12 @@ async function handleJob(job: JobRecord, logger: Logger) {
     case "noop":
       logger.info("job.noop", { job_id: job.id });
       return;
+    case "ingest_file":
+      logger.info("job.ingest_file", {
+        job_id: job.id,
+        payload_json: job.payload_json,
+      });
+      return;
   }
 }
 

@@ -23,6 +23,7 @@ import { createJobRunner } from "./jobs/runner";
 import { EnqueueJobRequestSchema, JobStatusSchema } from "./jobs/schemas";
 import { Logger } from "./logger";
 import { SseHub } from "./sse";
+import { createWatcher } from "./watcher/watcher";
 
 const config = loadConfig();
 
@@ -35,6 +36,17 @@ const runner = createJobRunner({ queue, logger });
 runner.start();
 
 logger.subscribe((evt) => sse.broadcast({ type: "log", payload: evt }));
+
+const watcher = createWatcher({
+  config: {
+    roots: (await readSettings()).watchRoots,
+    stableWindowMs: 5_000,
+    scanIntervalMs: 30_000,
+  },
+  queue,
+  logger,
+});
+watcher.start();
 
 const SettingsSchema = z.object({
   unifiedDir: z.string().min(1),
@@ -84,6 +96,11 @@ const app = new Elysia()
     });
   })
   .get("/api/logs", () => ({ logs: logger.getRecent(300) }))
+  .get("/api/watch", () => watcher.getState())
+  .post("/api/watch/scan", async () => {
+    await watcher.scanNow();
+    return { ok: true };
+  })
   .get("/api/jobs", ({ query }) => {
     const parsed = z
       .object({
@@ -111,6 +128,7 @@ const app = new Elysia()
   .post("/api/settings", async ({ body }) => {
     const parsed = SettingsSchema.parse(body);
     await writeSettings(parsed);
+    watcher.updateRoots(parsed.watchRoots);
     logger.info("settings.update", {
       unifiedDir: parsed.unifiedDir,
       watchRoots: parsed.watchRoots,

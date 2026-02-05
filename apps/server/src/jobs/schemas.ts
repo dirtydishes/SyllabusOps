@@ -9,7 +9,7 @@ export const JobStatusSchema = z.enum([
 ]);
 export type JobStatus = z.infer<typeof JobStatusSchema>;
 
-export const JobTypeSchema = z.enum(["noop"]);
+export const JobTypeSchema = z.enum(["noop", "ingest_file"]);
 export type JobType = z.infer<typeof JobTypeSchema>;
 
 export const JobRecordSchema = z.object({
