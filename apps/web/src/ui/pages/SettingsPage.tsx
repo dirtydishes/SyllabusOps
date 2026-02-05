@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
 import { type Settings, getSettings, saveSettings } from "../lib/api";
 import {
+  type CodexStatus,
+  codexLogout,
+  getCodexStatus,
+  startCodexChatgptLogin,
+} from "../lib/codex";
+import {
   type OpenAiStatus,
   clearOpenAiApiKey,
   disconnectOpenAiOAuth,
@@ -15,6 +21,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [openAiStatus, setOpenAiStatus] = useState<OpenAiStatus | null>(null);
+  const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
 
@@ -30,6 +37,13 @@ export function SettingsPage() {
     getOpenAiStatus()
       .then((s) => {
         if (!cancelled) setOpenAiStatus(s);
+      })
+      .catch(() => {
+        // ignore
+      });
+    getCodexStatus()
+      .then((s) => {
+        if (!cancelled) setCodexStatus(s);
       })
       .catch(() => {
         // ignore
@@ -56,6 +70,11 @@ export function SettingsPage() {
   async function refreshAuthStatus() {
     try {
       setOpenAiStatus(await getOpenAiStatus());
+    } catch {
+      // ignore
+    }
+    try {
+      setCodexStatus(await getCodexStatus());
     } catch {
       // ignore
     }
@@ -107,6 +126,32 @@ export function SettingsPage() {
     setError(null);
     try {
       await clearOpenAiApiKey();
+      await refreshAuthStatus();
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function onCodexConnect() {
+    setAuthBusy(true);
+    setError(null);
+    try {
+      const { authUrl } = await startCodexChatgptLogin();
+      window.location.href = authUrl;
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setAuthBusy(false);
+    }
+  }
+
+  async function onCodexLogout() {
+    setAuthBusy(true);
+    setError(null);
+    try {
+      await codexLogout();
       await refreshAuthStatus();
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
@@ -180,6 +225,114 @@ export function SettingsPage() {
             />
             <span>Enable ingest (enqueue copy/extract jobs)</span>
           </label>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">LLM Provider</div>
+        <div className="muted">
+          Choose how SyllabusOps calls models. “Codex” uses your Codex/ChatGPT
+          sign-in (no API key). “OpenAI API” uses OAuth/API key.
+        </div>
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="llmProvider">Provider</label>
+          <select
+            id="llmProvider"
+            className="input"
+            value={value?.llmProvider ?? "openai"}
+            onChange={(e) =>
+              setValue((v) =>
+                v
+                  ? {
+                      ...v,
+                      llmProvider: e.target.value as Settings["llmProvider"],
+                    }
+                  : v
+              )
+            }
+          >
+            <option value="codex">Codex (ChatGPT auth)</option>
+            <option value="openai">OpenAI API</option>
+          </select>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">Codex</div>
+        <div className="muted">
+          Uses local <span className="mono">codex app-server</span> and your
+          Codex/ChatGPT sign-in.
+        </div>
+
+        <div className="kv" style={{ marginTop: 10 }}>
+          <div className="k">Available</div>
+          <div className="v">
+            {codexStatus?.available ? (
+              <span className="chip chip-ok">Yes</span>
+            ) : (
+              <span className="chip chip-warn">No</span>
+            )}
+          </div>
+        </div>
+        <div className="kv">
+          <div className="k">Auth</div>
+          <div className="v">
+            {codexStatus?.connected ? (
+              <span className="chip chip-ok">
+                Connected
+                {codexStatus.accountLabel ? ` (${codexStatus.accountLabel})` : ""}
+              </span>
+            ) : (
+              <span className="chip chip-warn">Not connected</span>
+            )}
+          </div>
+        </div>
+
+        {codexStatus?.lastError ? (
+          <div className="card card-error" style={{ marginTop: 12 }}>
+            {codexStatus.lastError}
+          </div>
+        ) : null}
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="codexModel">Model</label>
+          <input
+            id="codexModel"
+            className="input mono"
+            value={value?.codexModel ?? ""}
+            onChange={(e) =>
+              setValue((v) => (v ? { ...v, codexModel: e.target.value } : v))
+            }
+            placeholder="gpt-5.1-codex"
+          />
+        </div>
+
+        <div className="row" style={{ marginTop: 10 }}>
+          <button
+            type="button"
+            className="button primary"
+            disabled={!codexStatus?.available || authBusy}
+            onClick={onCodexConnect}
+          >
+            Connect Codex
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!codexStatus?.connected || authBusy}
+            onClick={onCodexLogout}
+          >
+            Logout
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={authBusy}
+            onClick={() => void refreshAuthStatus()}
+          >
+            Refresh
+          </button>
         </div>
       </div>
 

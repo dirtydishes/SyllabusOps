@@ -10,8 +10,10 @@ export type Settings = {
   unifiedDir: string;
   watchRoots: string[];
   ingestEnabled: boolean;
+  llmProvider: "openai" | "codex";
   openaiApiBaseUrl: string;
   openaiModel: string;
+  codexModel: string;
   openaiOAuth?: {
     clientId: string;
     authorizeUrl: string;
