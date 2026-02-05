@@ -328,7 +328,9 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       const turnStart = await rpc.request("turn/start", {
         threadId,
         input: [{ type: "text", text: fullPrompt }],
-        outputSchema: { name: input.schemaName, schema: input.schema },
+        // Codex app-server expects the JSON Schema object directly here (it uses
+        // an internal name like `codex_output_schema` when forwarding).
+        outputSchema: input.schema,
         ...(input.effort ? { effort: input.effort } : {}),
       });
 
