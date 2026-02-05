@@ -45,6 +45,41 @@ SyllabusOps supports two ways to power AI features:
 - Suggest tasks per session (schema-first JSON → stored tasks)
 - Approve / Dismiss / Done workflow in the UI
 
+## Prerequisites
+SyllabusOps is built for macOS and works best with Homebrew.
+
+### 1) Install Homebrew (recommended)
+If you don’t already have Homebrew, open Terminal and run:
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+Then make sure `brew` is on your PATH (Homebrew will print the exact command for your machine).
+
+### 2) Install Bun
+With Homebrew:
+```sh
+brew install bun
+```
+
+Verify:
+```sh
+bun --version
+```
+
+### 3) (Recommended) Install Codex CLI for “sign in with ChatGPT”
+This powers the default Codex provider via `codex app-server`:
+```sh
+brew install codex
+codex --version
+```
+
+### 4) Optional: PDF text extraction helper
+If you want the best PDF extraction quality (textbooks/slides), install Poppler:
+```sh
+brew install poppler
+```
+
 ## Quick start
 From the repo root:
 ```sh
