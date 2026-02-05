@@ -20,7 +20,8 @@ SyllabusOps supports two ways to power AI features:
 
 1) **Codex (recommended for most students)** — uses your existing **ChatGPT/Codex sign‑in** via local `codex app-server` (no API key to paste).
    - If you already pay for ChatGPT, this is often the easiest “plug it into my account and go” option.
-2) **OpenAI API** — supports the OpenAI API for model calls (OAuth or Keychain‑stored API key fallback).
+2) **OpenAI API** — uses the OpenAI API for model calls (requires an API key; stored in macOS Keychain).
+   - Note: ChatGPT/Codex sign‑in is not the same thing as an API key — API usage is billed separately from most ChatGPT plans.
 
 ## What it can do today (MVP)
 **Pipeline**

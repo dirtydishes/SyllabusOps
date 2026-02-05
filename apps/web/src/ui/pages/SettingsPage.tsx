@@ -514,7 +514,7 @@ export function SettingsPage() {
       <div className="card">
         <div className="card-title">OpenAI</div>
         <div className="muted">
-          OAuth is preferred; API key fallback is stored in macOS Keychain.
+          OpenAI API calls typically use an API key (stored in macOS Keychain). OAuth is an advanced option.
         </div>
 
         <div className="field" style={{ marginTop: 12 }}>
@@ -618,7 +618,7 @@ export function SettingsPage() {
             disabled={!openAiStatus?.configured || authBusy}
             onClick={onConnect}
           >
-            Connect OpenAI OAuth
+            Connect OAuth (advanced)
           </button>
           <button
             type="button"
@@ -647,7 +647,7 @@ export function SettingsPage() {
         <div className="card" style={{ marginTop: 12 }}>
           <div className="card-title">OAuth configuration</div>
           <div className="muted">
-            Create an OpenAI OAuth client and register the redirect URI.
+            Advanced: configure an OAuth client and register the redirect URI.
           </div>
 
           <div className="field" style={{ marginTop: 12 }}>
