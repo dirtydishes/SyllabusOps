@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { formatLocalTimeOnYmd } from "../lib/time";
 
 type LogEvent = {
   ts: string;
@@ -131,7 +132,9 @@ export function LogsPage() {
                 key={`${l.ts}-${idx}`}
                 className={`log-row level-${l.level}`}
               >
-                <span className="mono log-ts">{l.ts}</span>
+                <span className="mono log-ts">
+                  {formatLocalTimeOnYmd(l.ts)}
+                </span>
                 <span className="log-level">{l.level}</span>
                 <span className="mono log-event">{l.event}</span>
                 <span className="log-msg">{l.msg ?? ""}</span>
