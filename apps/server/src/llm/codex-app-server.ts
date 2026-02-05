@@ -17,9 +17,11 @@ const AccountReadResultSchema = z
   })
   .passthrough();
 
-const LoginStartResultSchema = z.object({
-  authUrl: z.string().url(),
-}).passthrough();
+const LoginStartResultSchema = z
+  .object({
+    authUrl: z.string().url(),
+  })
+  .passthrough();
 
 function extractThreadId(raw: unknown): string {
   const a = z
@@ -44,7 +46,10 @@ function extractThreadId(raw: unknown): string {
 }
 
 function extractTurnId(raw: unknown): string {
-  const a = z.object({ turnId: z.string().min(1) }).passthrough().safeParse(raw);
+  const a = z
+    .object({ turnId: z.string().min(1) })
+    .passthrough()
+    .safeParse(raw);
   if (a.success) return a.data.turnId;
 
   const b = z
@@ -53,7 +58,10 @@ function extractTurnId(raw: unknown): string {
     .safeParse(raw);
   if (b.success) return b.data.turn.id;
 
-  const c = z.object({ id: z.string().min(1) }).passthrough().safeParse(raw);
+  const c = z
+    .object({ id: z.string().min(1) })
+    .passthrough()
+    .safeParse(raw);
   if (c.success) return c.data.id;
 
   throw new Error("Unexpected turn/start response shape.");
@@ -100,7 +108,10 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       description?: string;
       isDefault?: boolean;
       defaultReasoningEffort?: string;
-      supportedReasoningEfforts?: Array<{ reasoningEffort: string; description?: string }>;
+      supportedReasoningEfforts?: Array<{
+        reasoningEffort: string;
+        description?: string;
+      }>;
     }>;
   }> {
     await ensureInitialized();
@@ -183,7 +194,9 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     }
   }
 
-  async function loginStartChatgpt(): Promise<{ ok: true; authUrl: string } | { ok: false; error: string }> {
+  async function loginStartChatgpt(): Promise<
+    { ok: true; authUrl: string } | { ok: false; error: string }
+  > {
     try {
       await ensureInitialized();
       const raw = await rpc.request("account/login/start", { type: "chatgpt" });
@@ -246,7 +259,11 @@ export function createCodexAppServer(opts: { logger: Logger }) {
           id: z.string().min(1),
           type: z.string().min(1),
           content: z
-            .array(z.object({ type: z.string(), text: z.string().optional() }).passthrough())
+            .array(
+              z
+                .object({ type: z.string(), text: z.string().optional() })
+                .passthrough()
+            )
             .optional(),
           text: z.string().optional(),
         })
@@ -297,7 +314,9 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       if (!parsed.success) return null;
       const turn = parsed.data.thread.turns.find((t) => t.id === turnId);
       if (!turn) return null;
-      const agentItems = turn.items.filter((it) => isAssistantLikeItemType(it.type));
+      const agentItems = turn.items.filter((it) =>
+        isAssistantLikeItemType(it.type)
+      );
       const last = agentItems.at(-1);
       const txt = last?.text?.trim();
       return txt ? txt : null;
@@ -319,8 +338,14 @@ export function createCodexAppServer(opts: { logger: Logger }) {
         const legacy = z
           .object({
             itemId: z.string().min(1).optional(),
-            item: z.object({ id: z.string().min(1) }).passthrough().optional(),
-            delta: z.object({ text: z.string().optional() }).passthrough().optional(),
+            item: z
+              .object({ id: z.string().min(1) })
+              .passthrough()
+              .optional(),
+            delta: z
+              .object({ text: z.string().optional() })
+              .passthrough()
+              .optional(),
           })
           .passthrough()
           .safeParse(params);
@@ -334,7 +359,9 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       if (method === "item/completed") {
         const p = z
           .object({
-            item: z.object({ id: z.string().min(1), type: z.string().min(1) }).passthrough(),
+            item: z
+              .object({ id: z.string().min(1), type: z.string().min(1) })
+              .passthrough(),
           })
           .passthrough()
           .safeParse(params);
@@ -383,13 +410,14 @@ export function createCodexAppServer(opts: { logger: Logger }) {
     });
 
     try {
-      const threadStart = await rpc.request("thread/start", { model: input.model });
+      const threadStart = await rpc.request("thread/start", {
+        model: input.model,
+      });
       const threadId = extractThreadId(threadStart);
       lastThreadId = threadId;
 
       const fullPrompt =
-        `SYSTEM:\n${input.system.trim()}\n\n` +
-        `USER:\n${input.user.trim()}\n`;
+        `SYSTEM:\n${input.system.trim()}\n\n` + `USER:\n${input.user.trim()}\n`;
 
       const turnStart = await rpc.request("turn/start", {
         threadId,
@@ -418,7 +446,8 @@ export function createCodexAppServer(opts: { logger: Logger }) {
             threadId: lastThreadId,
             includeTurns: true,
           });
-          text = extractAssistantTextFromThreadRead(threadRead, lastTurnId) ?? "";
+          text =
+            extractAssistantTextFromThreadRead(threadRead, lastTurnId) ?? "";
         } catch {
           // ignore and fall back
         }
@@ -428,8 +457,7 @@ export function createCodexAppServer(opts: { logger: Logger }) {
       }
       if (!text) {
         throw new Error(
-          "Codex returned no agentMessage text. " +
-            `threadId=${lastThreadId ?? "?"} turnId=${lastTurnId ?? "?"}`
+          `Codex returned no agentMessage text. threadId=${lastThreadId ?? "?"} turnId=${lastTurnId ?? "?"}`
         );
       }
 

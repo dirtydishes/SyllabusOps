@@ -20,7 +20,8 @@ function extractOutputText(payload: OpenAiResponseJson): string {
   const texts: string[] = [];
   for (const item of payload.output ?? []) {
     for (const c of item.content ?? []) {
-      if (c.type === "output_text" && typeof c.text === "string") texts.push(c.text);
+      if (c.type === "output_text" && typeof c.text === "string")
+        texts.push(c.text);
     }
   }
   return texts.join("\n").trim();
@@ -76,7 +77,9 @@ export async function openAiJsonSchema<T>(opts: {
 
   const text = await res.text();
   if (!res.ok) {
-    throw new Error(`OpenAI /responses failed (${res.status}): ${text.slice(0, 800)}`);
+    throw new Error(
+      `OpenAI /responses failed (${res.status}): ${text.slice(0, 800)}`
+    );
   }
 
   let parsed: OpenAiResponseJson;

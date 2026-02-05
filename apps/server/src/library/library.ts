@@ -134,11 +134,16 @@ export async function scanCourseDetail(opts: {
   courseSlug: string;
   limitSessions?: number; // 0 means no limit
 }): Promise<
-  | { ok: true; course: { slug: string; name: string }; sessions: LibrarySession[] }
+  | {
+      ok: true;
+      course: { slug: string; name: string };
+      sessions: LibrarySession[];
+    }
   | { ok: false; error: "COURSE_NOT_FOUND" }
 > {
   const courseDir = path.join(opts.unifiedDir, opts.courseSlug);
-  if (!(await fileExists(courseDir))) return { ok: false, error: "COURSE_NOT_FOUND" };
+  if (!(await fileExists(courseDir)))
+    return { ok: false, error: "COURSE_NOT_FOUND" };
 
   const rawDir = path.join(courseDir, "raw");
   const years = await listDirs(rawDir);
@@ -189,7 +194,12 @@ export async function scanCourseDetail(opts: {
         const cacheType = inferCacheType({ kind: meta.data.kind, ext });
         const extractedTextAvailable = cacheType
           ? await fileExists(
-              path.join(opts.stateDir, "cache", cacheType, `${meta.data.sha256}.txt`)
+              path.join(
+                opts.stateDir,
+                "cache",
+                cacheType,
+                `${meta.data.sha256}.txt`
+              )
             )
           : false;
 
@@ -232,19 +242,27 @@ export async function scanSession(opts: {
   courseSlug: string;
   sessionDate: string;
 }): Promise<
-  | { ok: true; course: { slug: string; name: string }; session: LibrarySession }
+  | {
+      ok: true;
+      course: { slug: string; name: string };
+      session: LibrarySession;
+    }
   | { ok: false; error: "COURSE_NOT_FOUND" | "SESSION_NOT_FOUND" }
 > {
   const courseDir = path.join(opts.unifiedDir, opts.courseSlug);
-  if (!(await fileExists(courseDir))) return { ok: false, error: "COURSE_NOT_FOUND" };
+  if (!(await fileExists(courseDir)))
+    return { ok: false, error: "COURSE_NOT_FOUND" };
 
   const year = opts.sessionDate.slice(0, 4);
   const sessionAbs = path.join(courseDir, "raw", year, opts.sessionDate);
-  if (!(await fileExists(sessionAbs))) return { ok: false, error: "SESSION_NOT_FOUND" };
+  if (!(await fileExists(sessionAbs)))
+    return { ok: false, error: "SESSION_NOT_FOUND" };
 
   let fileNames: string[] = [];
   try {
-    fileNames = (await fs.readdir(sessionAbs)).sort((a, b) => a.localeCompare(b));
+    fileNames = (await fs.readdir(sessionAbs)).sort((a, b) =>
+      a.localeCompare(b)
+    );
   } catch {
     fileNames = [];
   }
@@ -274,7 +292,12 @@ export async function scanSession(opts: {
     const cacheType = inferCacheType({ kind: meta.data.kind, ext });
     const extractedTextAvailable = cacheType
       ? await fileExists(
-          path.join(opts.stateDir, "cache", cacheType, `${meta.data.sha256}.txt`)
+          path.join(
+            opts.stateDir,
+            "cache",
+            cacheType,
+            `${meta.data.sha256}.txt`
+          )
         )
       : false;
 

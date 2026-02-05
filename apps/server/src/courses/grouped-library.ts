@@ -24,7 +24,9 @@ function mergeSessions(sessions: LibrarySession[]): LibrarySession[] {
       map.set(s.date, { date: s.date, artifacts: [...s.artifacts] });
       continue;
     }
-    const seen = new Set(existing.artifacts.map((a) => `${a.sha256}:${a.relPath}`));
+    const seen = new Set(
+      existing.artifacts.map((a) => `${a.sha256}:${a.relPath}`)
+    );
     for (const a of s.artifacts) {
       const key = `${a.sha256}:${a.relPath}`;
       if (seen.has(key)) continue;
@@ -71,10 +73,14 @@ export async function scanCoursesGrouped(opts: {
 
     const mergedSessions = mergeSessions(okDetails.flatMap((d) => d.sessions));
     const artifacts = mergedSessions.flatMap((s) => s.artifacts);
-    const lastIngestedAt = artifacts.map((a) => a.ingestedAt).sort().at(-1) ?? null;
+    const lastIngestedAt =
+      artifacts
+        .map((a) => a.ingestedAt)
+        .sort()
+        .at(-1) ?? null;
 
     const registryName = await opts.registry.nameFor(canonicalSlug);
-    const fallbackName = okDetails[0]!.course.name;
+    const fallbackName = okDetails[0]?.course.name ?? canonicalSlug;
 
     out.push({
       slug: canonicalSlug,
@@ -95,7 +101,11 @@ export async function scanCourseDetailGrouped(opts: {
   registry: CourseRegistry;
   courseSlug: string; // canonical or physical
 }): Promise<
-  | { ok: true; course: { slug: string; name: string; memberSlugs: string[] }; sessions: LibrarySession[] }
+  | {
+      ok: true;
+      course: { slug: string; name: string; memberSlugs: string[] };
+      sessions: LibrarySession[];
+    }
   | { ok: false; error: "COURSE_NOT_FOUND" }
 > {
   const physicalSlugs = await listDirs(opts.unifiedDir);
@@ -126,11 +136,15 @@ export async function scanCourseDetailGrouped(opts: {
 
   const mergedSessions = mergeSessions(okDetails.flatMap((d) => d.sessions));
   const registryName = await opts.registry.nameFor(canonical);
-  const fallbackName = okDetails[0]!.course.name;
+  const fallbackName = okDetails[0]?.course.name ?? canonical;
 
   return {
     ok: true,
-    course: { slug: canonical, name: registryName ?? fallbackName ?? canonical, memberSlugs: members },
+    course: {
+      slug: canonical,
+      name: registryName ?? fallbackName ?? canonical,
+      memberSlugs: members,
+    },
     sessions: mergedSessions,
   };
 }
@@ -142,7 +156,11 @@ export async function scanSessionGrouped(opts: {
   courseSlug: string; // canonical or physical
   sessionDate: string;
 }): Promise<
-  | { ok: true; course: { slug: string; name: string; memberSlugs: string[] }; session: LibrarySession }
+  | {
+      ok: true;
+      course: { slug: string; name: string; memberSlugs: string[] };
+      session: LibrarySession;
+    }
   | { ok: false; error: "COURSE_NOT_FOUND" | "SESSION_NOT_FOUND" }
 > {
   const canonical = await opts.registry.resolveCanonical(opts.courseSlug);
@@ -175,11 +193,15 @@ export async function scanSessionGrouped(opts: {
   if (!session) return { ok: false, error: "SESSION_NOT_FOUND" };
 
   const registryName = await opts.registry.nameFor(canonical);
-  const fallbackName = okSessions[0]!.course.name;
+  const fallbackName = okSessions[0]?.course.name ?? canonical;
 
   return {
     ok: true,
-    course: { slug: canonical, name: registryName ?? fallbackName ?? canonical, memberSlugs: members },
+    course: {
+      slug: canonical,
+      name: registryName ?? fallbackName ?? canonical,
+      memberSlugs: members,
+    },
     session,
   };
 }

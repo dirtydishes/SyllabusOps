@@ -1,5 +1,5 @@
-import fs from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { Logger } from "../logger";
 import { detectSessionDate } from "./date";
@@ -150,10 +150,7 @@ export async function ingestFile(opts: {
       await fs.copyFile(opts.sourcePath, candidate, fsConstants.COPYFILE_EXCL);
       copiedTo = candidate;
       break;
-    } catch {
-      // race, try next suffix
-      continue;
-    }
+    } catch {}
   }
   if (!copiedTo) {
     const suffix = sha256.slice(0, 10);

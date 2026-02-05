@@ -15,12 +15,16 @@ import {
   createOpenAiAuth,
 } from "./auth/openai";
 import { loadConfig } from "./config";
+import {
+  scanCourseDetailGrouped,
+  scanCoursesGrouped,
+  scanSessionGrouped,
+} from "./courses/grouped-library";
+import { createCourseRegistry } from "./courses/registry";
 import { openDb } from "./db";
 import { extractPdfToCache } from "./extract/pdf";
 import { extractPptxToCache } from "./extract/pptx";
 import { extractTranscriptToCache } from "./extract/transcript";
-import { scanCourseDetailGrouped, scanCoursesGrouped, scanSessionGrouped } from "./courses/grouped-library";
-import { createCourseRegistry } from "./courses/registry";
 import {
   FsSchemas,
   getRevisionDir,
@@ -32,7 +36,11 @@ import {
 import { ingestFile } from "./ingest/ingest-file";
 import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
-import { EnqueueJobRequestSchema, JobStatusSchema, JobTypeSchema } from "./jobs/schemas";
+import {
+  EnqueueJobRequestSchema,
+  JobStatusSchema,
+  JobTypeSchema,
+} from "./jobs/schemas";
 import { createCodexAppServer } from "./llm/codex-app-server";
 import { openAiJsonSchema } from "./llm/openai-responses";
 import { Logger } from "./logger";
@@ -48,7 +56,10 @@ const logger = new Logger({ logsDir: path.join(config.stateDir, "logs") });
 const sse = new SseHub();
 const db = await openDb({ stateDir: config.stateDir });
 const queue = createJobQueue(db);
-const courseRegistry = createCourseRegistry({ stateDir: config.stateDir, logger });
+const courseRegistry = createCourseRegistry({
+  stateDir: config.stateDir,
+  logger,
+});
 
 logger.subscribe((evt) => sse.broadcast({ type: "log", payload: evt }));
 
@@ -79,7 +90,9 @@ function normalizeSettings(s: Settings): Settings {
   return {
     ...s,
     unifiedDir: normalizeShellEscapedPath(s.unifiedDir),
-    watchRoots: (s.watchRoots ?? []).map(normalizeShellEscapedPath).filter(Boolean),
+    watchRoots: (s.watchRoots ?? [])
+      .map(normalizeShellEscapedPath)
+      .filter(Boolean),
   };
 }
 
@@ -176,9 +189,14 @@ const runner = createJobRunner({
           pipelineVersion: "0.0.0-dev",
           logger,
           resolveCourse: async (detected) => {
-            const canonical = await courseRegistry.resolveCanonical(detected.courseSlug);
+            const canonical = await courseRegistry.resolveCanonical(
+              detected.courseSlug
+            );
             const name = await courseRegistry.nameFor(canonical);
-            return { courseSlug: canonical, courseShort: name ?? detected.courseShort };
+            return {
+              courseSlug: canonical,
+              courseShort: name ?? detected.courseShort,
+            };
           },
         });
         if (!res.ok) throw new Error(res.error);
@@ -368,7 +386,10 @@ const runner = createJobRunner({
 
         if (contextParts.length === 0) {
           queue.block(job.id, "NO_EXTRACTED_TEXT");
-          logger.warn("job.blocked", { job_id: job.id, reason: "NO_EXTRACTED_TEXT" });
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "NO_EXTRACTED_TEXT",
+          });
           return "skip";
         }
 
@@ -409,12 +430,9 @@ const runner = createJobRunner({
           "You extract actionable school tasks from class materials. " +
           "Return only JSON that matches the provided schema. " +
           "Tasks should be specific and student-actionable (read, review, practice, homework, follow-up questions). " +
-          "If no tasks are present, return {\"tasks\": []}.";
+          'If no tasks are present, return {"tasks": []}.';
 
-        const user =
-          `Course: ${scanned.course.name} (${canonicalCourseSlug})\n` +
-          `Session date: ${sessionDate}\n\n` +
-          contextParts.join("\n");
+        const user = `Course: ${scanned.course.name} (${canonicalCourseSlug})\nSession date: ${sessionDate}\n\n${contextParts.join("\n")}`;
 
         let raw: unknown;
         if (currentSettings.llmProvider === "openai") {
@@ -444,12 +462,18 @@ const runner = createJobRunner({
           const st = await codex.status();
           if (!st.available) {
             queue.block(job.id, "CODEX_UNAVAILABLE");
-            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_UNAVAILABLE" });
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "CODEX_UNAVAILABLE",
+            });
             return "skip";
           }
           if (st.requiresOpenaiAuth && !st.connected) {
             queue.block(job.id, "CODEX_AUTH_REQUIRED");
-            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_AUTH_REQUIRED" });
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "CODEX_AUTH_REQUIRED",
+            });
             return "skip";
           }
           raw = await codex.jsonSchemaTurn<unknown>({
@@ -556,7 +580,10 @@ const runner = createJobRunner({
 
         if (contextParts.length === 0) {
           queue.block(job.id, "NO_EXTRACTED_TEXT");
-          logger.warn("job.blocked", { job_id: job.id, reason: "NO_EXTRACTED_TEXT" });
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "NO_EXTRACTED_TEXT",
+          });
           return "skip";
         }
 
@@ -566,7 +593,12 @@ const runner = createJobRunner({
           overview: z.string().default(""),
           keyPoints: z.array(z.string()).default([]),
           vocabulary: z
-            .array(z.object({ term: z.string().min(1), definition: z.string().min(1) }))
+            .array(
+              z.object({
+                term: z.string().min(1),
+                definition: z.string().min(1),
+              })
+            )
             .default([]),
           actionItems: z.array(z.string()).default([]),
           questions: z.array(z.string()).default([]),
@@ -611,10 +643,7 @@ const runner = createJobRunner({
           "Return only JSON that matches the provided schema. " +
           "Do not include anything not grounded in the provided context.";
 
-        const user =
-          `Course: ${scanned.course.name} (${canonicalCourseSlug})\n` +
-          `Session date: ${sessionDate}\n\n` +
-          contextParts.join("\n");
+        const user = `Course: ${scanned.course.name} (${canonicalCourseSlug})\nSession date: ${sessionDate}\n\n${contextParts.join("\n")}`;
 
         let raw: unknown;
         if (currentSettings.llmProvider === "openai") {
@@ -644,12 +673,18 @@ const runner = createJobRunner({
           const st = await codex.status();
           if (!st.available) {
             queue.block(job.id, "CODEX_UNAVAILABLE");
-            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_UNAVAILABLE" });
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "CODEX_UNAVAILABLE",
+            });
             return "skip";
           }
           if (st.requiresOpenaiAuth && !st.connected) {
             queue.block(job.id, "CODEX_AUTH_REQUIRED");
-            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_AUTH_REQUIRED" });
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "CODEX_AUTH_REQUIRED",
+            });
             return "skip";
           }
           raw = await codex.jsonSchemaTurn<unknown>({
@@ -670,10 +705,14 @@ const runner = createJobRunner({
         md.push(`**Session:** ${parsed.date}`);
         md.push(`**Generated:** ${new Date().toISOString()}`);
         md.push("");
-        md.push("> This file is generated by SyllabusOps. If you want to keep manual edits, put them in session Notes.");
+        md.push(
+          "> This file is generated by SyllabusOps. If you want to keep manual edits, put them in session Notes."
+        );
         md.push("");
         md.push("## Overview");
-        md.push(parsed.overview?.trim() ? parsed.overview.trim() : "_(no overview)_");
+        md.push(
+          parsed.overview?.trim() ? parsed.overview.trim() : "_(no overview)_"
+        );
         md.push("");
         md.push("## Key points");
         if (parsed.keyPoints.length === 0) md.push("_(none)_");
@@ -681,7 +720,8 @@ const runner = createJobRunner({
         md.push("");
         md.push("## Vocabulary");
         if (parsed.vocabulary.length === 0) md.push("_(none)_");
-        for (const v of parsed.vocabulary) md.push(`- **${v.term}**: ${v.definition}`);
+        for (const v of parsed.vocabulary)
+          md.push(`- **${v.term}**: ${v.definition}`);
         md.push("");
         md.push("## Action items");
         if (parsed.actionItems.length === 0) md.push("_(none)_");
@@ -695,7 +735,9 @@ const runner = createJobRunner({
         const relPath = `${canonicalCourseSlug}/generated/sessions/${sessionDate}/session-summary.md`;
         const resolved = resolveWithinRoot(currentSettings.unifiedDir, relPath);
         if (!resolved.ok) throw new Error("SUMMARY_PATH_DENIED");
-        await fs.mkdir(path.dirname(resolved.absolutePath), { recursive: true });
+        await fs.mkdir(path.dirname(resolved.absolutePath), {
+          recursive: true,
+        });
         await fs.writeFile(resolved.absolutePath, `${md.join("\n")}\n`, "utf8");
 
         logger.info("summary.session.generated", {
@@ -740,9 +782,11 @@ function looksSafeUnifiedDirForWipe(
   const base = path.basename(resolved).toLowerCase();
 
   if (resolved === root) return { ok: false, error: "RESET_REFUSED_ROOT" };
-  if (home && resolved === home) return { ok: false, error: "RESET_REFUSED_HOME" };
+  if (home && resolved === home)
+    return { ok: false, error: "RESET_REFUSED_HOME" };
   if (base.length < 3) return { ok: false, error: "RESET_REFUSED_TOO_SHORT" };
-  if (!base.includes("unified")) return { ok: false, error: "RESET_REFUSED_NOT_UNIFIED" };
+  if (!base.includes("unified"))
+    return { ok: false, error: "RESET_REFUSED_NOT_UNIFIED" };
   return { ok: true };
 }
 
@@ -782,10 +826,13 @@ const app = new Elysia()
       return list;
     } catch (e: unknown) {
       const msg = String((e as Error)?.message ?? e);
-      return new Response(JSON.stringify({ error: "CODEX_MODELS_FAILED", detail: msg }), {
-        status: 502,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "CODEX_MODELS_FAILED", detail: msg }),
+        {
+          status: 502,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
   })
   .get("/api/openai/models", async () => {
@@ -806,7 +853,10 @@ const app = new Elysia()
     const text = await res.text();
     if (!res.ok) {
       return new Response(
-        JSON.stringify({ error: `OPENAI_MODELS_FAILED: ${res.status}`, detail: text.slice(0, 400) }),
+        JSON.stringify({
+          error: `OPENAI_MODELS_FAILED: ${res.status}`,
+          detail: text.slice(0, 400),
+        }),
         { status: 502, headers: { "Content-Type": "application/json" } }
       );
     }
@@ -822,9 +872,13 @@ const app = new Elysia()
     }
 
     const ModelsSchema = z.object({
-      data: z.array(z.object({ id: z.string().min(1) }).passthrough()).default([]),
+      data: z
+        .array(z.object({ id: z.string().min(1) }).passthrough())
+        .default([]),
     });
-    const models = ModelsSchema.parse(parsed).data.map((m) => m.id).sort((a, b) => a.localeCompare(b));
+    const models = ModelsSchema.parse(parsed)
+      .data.map((m) => m.id)
+      .sort((a, b) => a.localeCompare(b));
     return { models };
   })
   .get("/api/auth/codex/status", async () => await codex.status())
@@ -847,7 +901,9 @@ const app = new Elysia()
       .object({
         courseSlug: z.string().min(1),
         sessionDate: z.string().optional(),
-        status: z.enum(["suggested", "approved", "done", "dismissed"]).optional(),
+        status: z
+          .enum(["suggested", "approved", "done", "dismissed"])
+          .optional(),
         limit: z.coerce.number().int().positive().optional(),
       })
       .parse(query);
@@ -932,7 +988,9 @@ const app = new Elysia()
       courseSlug,
     });
     if (!res.ok) {
-      return new Response(JSON.stringify({ error: res.error }), { status: 404 });
+      return new Response(JSON.stringify({ error: res.error }), {
+        status: 404,
+      });
     }
 
     return {
@@ -948,7 +1006,9 @@ const app = new Elysia()
     };
   })
   .post("/api/courses/:courseSlug/rename", async ({ params, body }) => {
-    const courseSlug = z.object({ courseSlug: z.string().min(1) }).parse(params).courseSlug;
+    const courseSlug = z
+      .object({ courseSlug: z.string().min(1) })
+      .parse(params).courseSlug;
     const b = z.object({ name: z.string().min(1) }).parse(body);
     const canonical = await courseRegistry.resolveCanonical(courseSlug);
     await courseRegistry.setName(canonical, b.name);
@@ -962,18 +1022,27 @@ const app = new Elysia()
         name: z.string().optional(),
       })
       .parse(body);
-    const destination = await courseRegistry.resolveCanonical(b.destinationSlug);
-    const sources = Array.from(new Set(b.sourceSlugs.map((s) => s.trim()).filter(Boolean)));
-    await fs.mkdir(path.join(currentSettings.unifiedDir, destination), { recursive: true });
-    await courseRegistry.mergeInto({ destinationSlug: destination, sourceSlugs: sources, name: b.name });
+    const destination = await courseRegistry.resolveCanonical(
+      b.destinationSlug
+    );
+    const sources = Array.from(
+      new Set(b.sourceSlugs.map((s) => s.trim()).filter(Boolean))
+    );
+    await fs.mkdir(path.join(currentSettings.unifiedDir, destination), {
+      recursive: true,
+    });
+    await courseRegistry.mergeInto({
+      destinationSlug: destination,
+      sourceSlugs: sources,
+      name: b.name,
+    });
 
     // Move tasks over so TODO lists stay unified.
     const placeholders = sources.map(() => "?").join(",");
     if (placeholders) {
-      db.query(`UPDATE tasks SET course_slug = ? WHERE course_slug IN (${placeholders})`).run(
-        destination,
-        ...sources
-      );
+      db.query(
+        `UPDATE tasks SET course_slug = ? WHERE course_slug IN (${placeholders})`
+      ).run(destination, ...sources);
     }
     return { ok: true, destinationSlug: destination };
   })
@@ -1106,10 +1175,13 @@ const app = new Elysia()
     if (countRunningJobs() > 0) {
       if (watcherWasRunning) watcher.start();
       runner.start();
-      return new Response(JSON.stringify({ error: "RESET_BUSY_RUNNING_JOBS" }), {
-        status: 409,
-        headers: { "Content-Type": "application/json" },
-      });
+      return new Response(
+        JSON.stringify({ error: "RESET_BUSY_RUNNING_JOBS" }),
+        {
+          status: 409,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
     }
 
     // Disable ingestion after reset by default (safer).
@@ -1123,18 +1195,33 @@ const app = new Elysia()
     db.exec("DELETE FROM tasks;");
 
     // Clear local caches/logs/revisions.
-    await fs.rm(path.join(config.stateDir, "cache"), { recursive: true, force: true });
-    await fs.rm(path.join(config.stateDir, "logs"), { recursive: true, force: true });
-    await fs.rm(path.join(config.stateDir, "revisions"), { recursive: true, force: true });
+    await fs.rm(path.join(config.stateDir, "cache"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(config.stateDir, "logs"), {
+      recursive: true,
+      force: true,
+    });
+    await fs.rm(path.join(config.stateDir, "revisions"), {
+      recursive: true,
+      force: true,
+    });
 
     // Optionally wipe the Unified library.
     let unifiedDeleted = 0;
     if (b.scope === "state+unified") {
-      if (typeof b.unifiedDir !== "string" || b.unifiedDir !== currentSettings.unifiedDir) {
-        return new Response(JSON.stringify({ error: "RESET_UNIFIED_DIR_MISMATCH" }), {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        });
+      if (
+        typeof b.unifiedDir !== "string" ||
+        b.unifiedDir !== currentSettings.unifiedDir
+      ) {
+        return new Response(
+          JSON.stringify({ error: "RESET_UNIFIED_DIR_MISMATCH" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
       }
       const safe = looksSafeUnifiedDirForWipe(currentSettings.unifiedDir);
       if (!safe.ok) {
@@ -1158,7 +1245,11 @@ const app = new Elysia()
       unifiedDir: currentSettings.unifiedDir,
     });
 
-    return { ok: true, unifiedDeleted, ingestEnabled: currentSettings.ingestEnabled };
+    return {
+      ok: true,
+      unifiedDeleted,
+      ingestEnabled: currentSettings.ingestEnabled,
+    };
   })
   .post("/api/settings", async ({ body }) => {
     const parsed = normalizeSettings(SettingsSchema.parse(body));

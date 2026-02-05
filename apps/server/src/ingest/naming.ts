@@ -69,7 +69,10 @@ function stripLeadingDateTimeFolder(name: string): string | null {
   return rest ? rest : null;
 }
 
-export function courseFromSourcePath(sourcePath: string, watchRoot: string | null = null): {
+export function courseFromSourcePath(
+  sourcePath: string,
+  watchRoot: string | null = null
+): {
   courseShort: string;
   courseSlug: string;
 } {

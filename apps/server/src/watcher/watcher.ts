@@ -35,7 +35,7 @@ export function createWatcher(opts: {
   shouldEnqueue: () => boolean;
   getIgnoredAbsPrefixes?: () => string[];
 }): Watcher {
-  let gate = new StabilityGate({
+  const gate = new StabilityGate({
     stableWindowMs: opts.config.stableWindowMs,
   });
 
@@ -57,7 +57,9 @@ export function createWatcher(opts: {
       const files = await scanOnce({
         roots,
         allowedExtensions: DEFAULT_ALLOWED_EXTS,
-        ignoreAbsPrefixes: opts.getIgnoredAbsPrefixes ? opts.getIgnoredAbsPrefixes() : [],
+        ignoreAbsPrefixes: opts.getIgnoredAbsPrefixes
+          ? opts.getIgnoredAbsPrefixes()
+          : [],
       });
 
       lastScanAt = new Date().toISOString();
@@ -76,7 +78,11 @@ export function createWatcher(opts: {
         opts.queue.enqueue({
           jobType: "ingest_file",
           priority: 2,
-          payload: { sourcePath: f.absolutePath, watchRoot: f.root, detectedAt: lastScanAt },
+          payload: {
+            sourcePath: f.absolutePath,
+            watchRoot: f.root,
+            detectedAt: lastScanAt,
+          },
         });
       }
 

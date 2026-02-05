@@ -36,11 +36,12 @@ async function* readLines(stream: ReadableStream<Uint8Array>) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-      let idx: number;
-      while ((idx = buf.indexOf("\n")) >= 0) {
+      let idx = buf.indexOf("\n");
+      while (idx >= 0) {
         const line = buf.slice(0, idx);
         buf = buf.slice(idx + 1);
         yield line;
+        idx = buf.indexOf("\n");
       }
     }
   } finally {
@@ -57,7 +58,9 @@ export class JsonRpcLineClient {
     number,
     { resolve: (v: unknown) => void; reject: (e: Error) => void }
   >();
-  private readonly onNotify = new Set<(method: string, params: unknown) => void>();
+  private readonly onNotify = new Set<
+    (method: string, params: unknown) => void
+  >();
 
   constructor(
     private readonly opts: {
@@ -80,7 +83,11 @@ export class JsonRpcLineClient {
     }
 
     try {
-      this.proc = Bun.spawn(this.opts.cmd, { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
+      this.proc = Bun.spawn(this.opts.cmd, {
+        stdin: "pipe",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
     } catch (e: unknown) {
       throw new Error(
         `${this.opts.name} spawn failed: ${String((e as Error)?.message ?? e)}`
@@ -97,7 +104,10 @@ export class JsonRpcLineClient {
         // Bun FileSink / Node Writable-like
         (stdin as { write: (b: Uint8Array) => unknown }).write(bytes);
       };
-    } else if (stdin && typeof (stdin as { getWriter?: unknown }).getWriter === "function") {
+    } else if (
+      stdin &&
+      typeof (stdin as { getWriter?: unknown }).getWriter === "function"
+    ) {
       const writer = (stdin as WritableStream<Uint8Array>).getWriter();
       this.writeToStdin = async (bytes) => {
         await writer.write(bytes);
@@ -142,18 +152,21 @@ export class JsonRpcLineClient {
           const { done, value } = await reader.read();
           if (done) break;
           buf += decoder.decode(value, { stream: true });
-          let idx: number;
-          while ((idx = buf.indexOf("\n")) >= 0) {
+          let idx = buf.indexOf("\n");
+          while (idx >= 0) {
             const line = buf.slice(0, idx).trim();
             buf = buf.slice(idx + 1);
-            if (line) this.opts.logger.warn(`${this.opts.name}.stderr`, { line });
+            if (line)
+              this.opts.logger.warn(`${this.opts.name}.stderr`, { line });
+            idx = buf.indexOf("\n");
           }
         }
       } finally {
         reader.releaseLock();
       }
       const tail = buf.trim();
-      if (tail) this.opts.logger.warn(`${this.opts.name}.stderr`, { line: tail });
+      if (tail)
+        this.opts.logger.warn(`${this.opts.name}.stderr`, { line: tail });
     })();
 
     void (async () => {

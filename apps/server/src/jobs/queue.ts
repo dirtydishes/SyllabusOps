@@ -8,7 +8,11 @@ export type JobQueue = {
     payload: Record<string, unknown>;
     priority: number;
   }) => JobRecord;
-  list: (opts?: { limit?: number; status?: JobStatus; jobType?: JobType }) => JobRecord[];
+  list: (opts?: {
+    limit?: number;
+    status?: JobStatus;
+    jobType?: JobType;
+  }) => JobRecord[];
   stats: () => { counts: Record<JobStatus, number> };
   claimNext: () => JobRecord | null;
   succeed: (id: string) => void;
@@ -129,7 +133,10 @@ export function createJobQueue(db: Db): JobQueue {
         .query("SELECT attempts, max_attempts FROM jobs WHERE id = ?")
         .get(id) as { attempts?: number; max_attempts?: number } | null;
       const attempts = Number(row?.attempts ?? 1);
-      const delaySeconds = Math.min(10 * 2 ** Math.max(0, attempts - 1), 10 * 60);
+      const delaySeconds = Math.min(
+        10 * 2 ** Math.max(0, attempts - 1),
+        10 * 60
+      );
       const nextRunAt = new Date(
         Date.now() + delaySeconds * 1000
       ).toISOString();

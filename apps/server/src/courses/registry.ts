@@ -15,7 +15,11 @@ export type CourseRegistry = {
   resolveCanonical: (slug: string) => Promise<string>;
   nameFor: (canonicalSlug: string) => Promise<string | null>;
   setName: (canonicalSlug: string, name: string) => Promise<void>;
-  mergeInto: (opts: { destinationSlug: string; sourceSlugs: string[]; name?: string }) => Promise<void>;
+  mergeInto: (opts: {
+    destinationSlug: string;
+    sourceSlugs: string[];
+    name?: string;
+  }) => Promise<void>;
 };
 
 async function readJsonFile(p: string): Promise<unknown | null> {
@@ -31,7 +35,10 @@ async function writeJsonFile(p: string, value: unknown): Promise<void> {
   await fs.writeFile(p, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-export function createCourseRegistry(opts: { stateDir: string; logger: Logger }): CourseRegistry {
+export function createCourseRegistry(opts: {
+  stateDir: string;
+  logger: Logger;
+}): CourseRegistry {
   const filePath = path.join(opts.stateDir, "courses.json");
   let cache: CourseRegistryData | null = null;
 
@@ -84,7 +91,8 @@ export function createCourseRegistry(opts: { stateDir: string; logger: Logger })
       nextAliases[src] = input.destinationSlug;
     }
     const nextNames = { ...reg.names };
-    if (input.name && input.name.trim()) nextNames[input.destinationSlug] = input.name.trim();
+    const trimmedName = input.name?.trim();
+    if (trimmedName) nextNames[input.destinationSlug] = trimmedName;
     await persist({ version: 1, aliases: nextAliases, names: nextNames });
     opts.logger.info("courses.registry.merge", {
       destinationSlug: input.destinationSlug,
@@ -95,4 +103,3 @@ export function createCourseRegistry(opts: { stateDir: string; logger: Logger })
 
   return { load, resolveCanonical, nameFor, setName, mergeInto };
 }
-

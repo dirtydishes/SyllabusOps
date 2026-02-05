@@ -58,7 +58,9 @@ function isUnderAnyPrefix(absPath: string, prefixes: string[]): boolean {
   if (prefixes.length === 0) return false;
   const abs = path.resolve(absPath);
   // Compare with trailing separator on prefixes to avoid /foo/bar matching /foo/barbaz.
-  return prefixes.some((pre) => abs === pre.slice(0, -1) || abs.startsWith(pre));
+  return prefixes.some(
+    (pre) => abs === pre.slice(0, -1) || abs.startsWith(pre)
+  );
 }
 
 async function* walkDir(

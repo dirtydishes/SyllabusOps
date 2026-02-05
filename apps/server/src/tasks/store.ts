@@ -50,7 +50,12 @@ export function createTasksStore(db: Db) {
             LIMIT ?
           `
           )
-          .all(opts.courseSlug, opts.sessionDate, opts.status, limit) as TaskRow[];
+          .all(
+            opts.courseSlug,
+            opts.sessionDate,
+            opts.status,
+            limit
+          ) as TaskRow[];
       }
       if (opts.sessionDate) {
         return db
@@ -88,7 +93,9 @@ export function createTasksStore(db: Db) {
         .all(opts.courseSlug, limit) as TaskRow[];
     },
 
-    insertSuggested: (tasks: NewTask[]): { inserted: number; ids: string[] } => {
+    insertSuggested: (
+      tasks: NewTask[]
+    ): { inserted: number; ids: string[] } => {
       const now = new Date().toISOString();
       const tx = db.transaction(() => {
         const ids: string[] = [];
@@ -137,4 +144,3 @@ export function createTasksStore(db: Db) {
     },
   };
 }
-
