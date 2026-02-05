@@ -8,6 +8,11 @@ import {
 } from "@syllabusops/core";
 import { Elysia } from "elysia";
 import { z } from "zod";
+import {
+  OpenAiOAuthConfigSchema,
+  OpenAiOAuthStatusSchema,
+  createOpenAiAuth,
+} from "./auth/openai";
 import { loadConfig } from "./config";
 import { openDb } from "./db";
 import { extractPdfToCache } from "./extract/pdf";
@@ -26,6 +31,7 @@ import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
 import { EnqueueJobRequestSchema, JobStatusSchema } from "./jobs/schemas";
 import { Logger } from "./logger";
+import { keychainStore } from "./secrets/keychain";
 import { SseHub } from "./sse";
 import { createWatcher } from "./watcher/watcher";
 
@@ -43,6 +49,7 @@ const SettingsSchema = z.object({
   unifiedDir: z.string().min(1),
   watchRoots: z.array(z.string()).default([]),
   ingestEnabled: z.boolean().default(false),
+  openaiOAuth: OpenAiOAuthConfigSchema.optional(),
 });
 type Settings = z.infer<typeof SettingsSchema>;
 
@@ -60,6 +67,7 @@ async function readSettings(): Promise<Settings> {
     unifiedDir: config.unifiedDir,
     watchRoots: config.watchRoots,
     ingestEnabled: false,
+    openaiOAuth: undefined,
   };
 }
 
@@ -69,6 +77,19 @@ async function writeSettings(next: Settings): Promise<void> {
 }
 
 let currentSettings = await readSettings();
+
+const secrets = keychainStore({
+  serviceName: "SyllabusOps",
+  fallbackDir: path.join(config.stateDir, "secrets"),
+  logger,
+});
+
+const openaiAuth = createOpenAiAuth({
+  getConfig: () => currentSettings.openaiOAuth ?? null,
+  secrets,
+  logger,
+  now: () => new Date(),
+});
 
 const watcher = createWatcher({
   config: {
@@ -256,6 +277,53 @@ const app = new Elysia()
     });
   })
   .get("/api/logs", () => ({ logs: logger.getRecent(300) }))
+  .get("/api/auth/openai/status", async () =>
+    OpenAiOAuthStatusSchema.parse(await openaiAuth.status())
+  )
+  .post("/api/auth/openai/start", async () => {
+    const res = await openaiAuth.start();
+    if (!res.ok) {
+      return new Response(JSON.stringify({ error: res.error }), {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    return res;
+  })
+  .get("/api/auth/openai/callback", async ({ query }) => {
+    const q = z.object({ code: z.string(), state: z.string() }).parse(query);
+    const result = await openaiAuth.handleCallback({
+      code: q.code,
+      state: q.state,
+    });
+    if (!result.ok) {
+      return new Response(
+        `<html><body><h1>OpenAI Auth Failed</h1><pre>${escapeHtml(result.error)}</pre></body></html>`,
+        { headers: { "Content-Type": "text/html; charset=utf-8" }, status: 400 }
+      );
+    }
+    return new Response(
+      "<html><body><h1>Connected</h1><p>OpenAI OAuth connected. You can close this tab.</p></body></html>",
+      { headers: { "Content-Type": "text/html; charset=utf-8" } }
+    );
+  })
+  .post("/api/auth/openai/disconnect", async () => {
+    await openaiAuth.disconnect();
+    return { ok: true };
+  })
+  .get(
+    "/api/auth/openai/apikey/status",
+    async () => await openaiAuth.apiKeyStatus()
+  )
+  .post("/api/auth/openai/apikey", async ({ body }) => {
+    const b = z.object({ apiKey: z.string().min(1) }).parse(body);
+    await openaiAuth.setApiKey(b.apiKey);
+    return { ok: true };
+  })
+  .post("/api/auth/openai/apikey/clear", async () => {
+    await openaiAuth.clearApiKey();
+    return { ok: true };
+  })
   .get("/api/watch", () => watcher.getState())
   .post("/api/watch/scan", async () => {
     await watcher.scanNow();
@@ -294,6 +362,7 @@ const app = new Elysia()
       unifiedDir: parsed.unifiedDir,
       watchRoots: parsed.watchRoots,
       ingestEnabled: parsed.ingestEnabled,
+      openaiOAuthConfigured: Boolean(parsed.openaiOAuth?.clientId),
     });
     return { ok: true };
   })
@@ -388,3 +457,12 @@ const app = new Elysia()
 app.listen(config.port);
 logger.info("server.start", { port: config.port, stateDir: config.stateDir });
 console.log(`SyllabusOps server listening on http://localhost:${config.port}`);
+
+function escapeHtml(s: string) {
+  return s
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
