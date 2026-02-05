@@ -69,6 +69,29 @@ export type TaskRow = {
   updated_at: string;
 };
 
+export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "blocked";
+export type JobType =
+  | "noop"
+  | "ingest_file"
+  | "extract_transcript"
+  | "extract_pptx"
+  | "extract_pdf"
+  | "suggest_tasks";
+
+export type JobRecord = {
+  id: string;
+  job_type: JobType;
+  status: JobStatus;
+  priority: number;
+  payload_json: string;
+  attempts: number;
+  max_attempts: number;
+  next_run_at: string;
+  last_error: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type FsEntry = { name: string; type: "file" | "dir" };
 export type FsListResponse = { path: string; entries: FsEntry[] };
 export type FsReadResponse = { path: string; content: string; sha256: string };
@@ -153,6 +176,22 @@ export async function markTaskDone(id: string): Promise<{ ok: true; changed: num
   return await http<{ ok: true; changed: number }>(`/api/tasks/${encodeURIComponent(id)}/done`, {
     method: "POST",
   });
+}
+
+export async function getJobs(input: {
+  status?: JobStatus;
+  type?: JobType;
+  limit?: number;
+}): Promise<{ jobs: JobRecord[] }> {
+  const url = new URL("/api/jobs", window.location.origin);
+  if (input.status) url.searchParams.set("status", input.status);
+  if (input.type) url.searchParams.set("type", input.type);
+  if (input.limit) url.searchParams.set("limit", String(input.limit));
+  return await http<{ jobs: JobRecord[] }>(url);
+}
+
+export async function getJobStats(): Promise<{ counts: Record<JobStatus, number> }> {
+  return await http<{ counts: Record<JobStatus, number> }>("/api/jobs/stats");
 }
 
 export async function getSettings(): Promise<Settings> {

@@ -4,6 +4,7 @@ import { ClassesPage } from "./pages/ClassesPage";
 import { EditorPage } from "./pages/EditorPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewPage } from "./pages/OverviewPage";
+import { QueuePage } from "./pages/QueuePage";
 import { SettingsPage } from "./pages/SettingsPage";
 
 function Shell(props: { children: React.ReactNode }) {
@@ -31,6 +32,14 @@ function Shell(props: { children: React.ReactNode }) {
             }
           >
             Classes
+          </NavLink>
+          <NavLink
+            to="/queue"
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
+          >
+            Queue
           </NavLink>
           <NavLink
             to="/editor"
@@ -73,6 +82,7 @@ export function App() {
         <Route path="/" element={<OverviewPage />} />
         <Route path="/classes" element={<ClassesPage />} />
         <Route path="/classes/:courseSlug" element={<ClassDetailPage />} />
+        <Route path="/queue" element={<QueuePage />} />
         <Route path="/editor" element={<EditorPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />

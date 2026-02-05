@@ -1,15 +1,18 @@
 import { useEffect, useState } from "react";
-import { type ApiStatus, getStatus } from "../lib/api";
+import { type ApiStatus, type JobStatus, getJobStats, getStatus } from "../lib/api";
 
 export function OverviewPage() {
   const [status, setStatus] = useState<ApiStatus | null>(null);
+  const [jobStats, setJobStats] = useState<Record<JobStatus, number> | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    getStatus()
-      .then((s) => {
-        if (!cancelled) setStatus(s);
+    Promise.all([getStatus(), getJobStats()])
+      .then(([s, js]) => {
+        if (cancelled) return;
+        setStatus(s);
+        setJobStats(js.counts);
       })
       .catch((e) => {
         if (!cancelled) setError(String(e?.message ?? e));
@@ -66,6 +69,40 @@ export function OverviewPage() {
               <div className="kv">
                 <div className="k">State</div>
                 <div className="v mono">{status.stateDir}</div>
+              </div>
+            </>
+          ) : (
+            <div className="muted">Loading…</div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-title">Queue</div>
+          {jobStats ? (
+            <>
+              <div className="kv">
+                <div className="k">Queued</div>
+                <div className="v">
+                  <span className="chip chip-neutral">{jobStats.queued ?? 0}</span>
+                </div>
+              </div>
+              <div className="kv">
+                <div className="k">Running</div>
+                <div className="v">
+                  <span className="chip chip-neutral">{jobStats.running ?? 0}</span>
+                </div>
+              </div>
+              <div className="kv">
+                <div className="k">Failed</div>
+                <div className="v">
+                  <span className="chip chip-warn">{jobStats.failed ?? 0}</span>
+                </div>
+              </div>
+              <div className="kv">
+                <div className="k">Blocked</div>
+                <div className="v">
+                  <span className="chip chip-warn">{jobStats.blocked ?? 0}</span>
+                </div>
               </div>
             </>
           ) : (

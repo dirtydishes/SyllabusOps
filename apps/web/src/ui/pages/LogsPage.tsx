@@ -12,6 +12,9 @@ export function LogsPage() {
   const [logs, setLogs] = useState<LogEvent[]>([]);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [level, setLevel] = useState<LogEvent["level"] | "all">("all");
+  const [q, setQ] = useState("");
 
   useEffect(() => {
     const es = new EventSource("/api/events");
@@ -26,27 +29,74 @@ export function LogsPage() {
     es.addEventListener("log", (evt) => {
       try {
         const payload = JSON.parse((evt as MessageEvent).data) as LogEvent;
-        setLogs((prev) => [...prev.slice(-499), payload]);
+        setLogs((prev) => {
+          if (paused) return prev;
+          return [...prev.slice(-499), payload];
+        });
       } catch {
         // ignore
       }
     });
     return () => es.close();
-  }, []);
+  }, [paused]);
 
-  const rows = useMemo(() => logs.slice().reverse(), [logs]);
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const filtered = logs.filter((l) => {
+      if (level !== "all" && l.level !== level) return false;
+      if (!needle) return true;
+      const hay = `${l.event} ${l.msg ?? ""}`.toLowerCase();
+      return hay.includes(needle);
+    });
+    return filtered.slice().reverse();
+  }, [logs, level, q]);
 
   return (
     <div className="page">
       <div className="page-header">
         <h1>Logs</h1>
-        <div className="muted">
-          {connected ? (
-            <span className="chip chip-ok">Live</span>
-          ) : (
-            <span className="chip chip-warn">Offline</span>
-          )}
-          {error ? <span className="muted"> • {error}</span> : null}
+        <div className="row">
+          <span className={connected ? "chip chip-ok" : "chip chip-warn"}>
+            {connected ? "Live" : "Offline"}
+          </span>
+          <span className="chip chip-neutral">{paused ? "Paused" : "Streaming"}</span>
+          {error ? <span className="muted">• {error}</span> : null}
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
+          <div className="field" style={{ minWidth: 180 }}>
+            <label>Level</label>
+            <select
+              className="input"
+              value={level}
+              onChange={(e) => setLevel((e.target.value as LogEvent["level"]) || "all")}
+            >
+              <option value="all">All</option>
+              <option value="debug">debug</option>
+              <option value="info">info</option>
+              <option value="warn">warn</option>
+              <option value="error">error</option>
+            </select>
+          </div>
+
+          <div className="field" style={{ minWidth: 280, flex: 1 }}>
+            <label>Search</label>
+            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="event or message…" />
+          </div>
+
+          <div className="field" style={{ minWidth: 220 }}>
+            <label>Controls</label>
+            <div className="row" style={{ marginTop: 6 }}>
+              <button type="button" className="button" onClick={() => setPaused((p) => !p)}>
+                {paused ? "Resume" : "Pause"}
+              </button>
+              <button type="button" className="button" onClick={() => setLogs([])}>
+                Clear
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

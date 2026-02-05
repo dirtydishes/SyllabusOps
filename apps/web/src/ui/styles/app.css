@@ -297,6 +297,10 @@
   grid-template-columns: 140px 1.6fr 110px 1.2fr;
 }
 
+.table.queue .table-row {
+  grid-template-columns: 160px 190px 110px 110px 220px 1fr;
+}
+
 .classes-grid {
   display: grid;
   grid-template-columns: 320px 1fr;
