@@ -34,10 +34,11 @@ export async function openAiJsonSchema<T>(opts: {
   schema: unknown; // JSON Schema object
   system: string;
   user: string;
+  reasoningEffort?: "low" | "medium" | "high";
   maxOutputTokens?: number;
 }): Promise<T> {
   const url = new URL("/responses", opts.apiBaseUrl);
-  const body = {
+  const body: Record<string, unknown> = {
     model: opts.model,
     input: [
       {
@@ -59,6 +60,10 @@ export async function openAiJsonSchema<T>(opts: {
     },
     max_output_tokens: opts.maxOutputTokens ?? 1200,
   };
+
+  if (opts.reasoningEffort) {
+    body.reasoning = { effort: opts.reasoningEffort };
+  }
 
   const res = await fetch(url, {
     method: "POST",
@@ -96,4 +101,3 @@ export async function openAiJsonSchema<T>(opts: {
   // validate is object/array-ish; caller should further validate
   return z.any().parse(json) as T;
 }
-

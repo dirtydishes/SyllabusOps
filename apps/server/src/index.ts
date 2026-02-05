@@ -54,9 +54,11 @@ const SettingsSchema = z.object({
   watchRoots: z.array(z.string()).default([]),
   ingestEnabled: z.boolean().default(false),
   llmProvider: z.enum(["openai", "codex"]).default("openai"),
+  llmMaxOutputTokens: z.number().int().min(256).max(8000).default(1200),
   openaiOAuth: OpenAiOAuthConfigSchema.optional(),
   openaiApiBaseUrl: z.string().url().default("https://api.openai.com/v1"),
   openaiModel: z.string().min(1).default("gpt-4o-mini"),
+  openaiReasoningEffort: z.enum(["low", "medium", "high"]).optional(),
   codexModel: z.string().min(1).default("gpt-5.1-codex"),
 });
 type Settings = z.infer<typeof SettingsSchema>;
@@ -76,9 +78,11 @@ async function readSettings(): Promise<Settings> {
     watchRoots: config.watchRoots,
     ingestEnabled: false,
     llmProvider: "openai",
+    llmMaxOutputTokens: 1200,
     openaiOAuth: undefined,
     openaiApiBaseUrl: "https://api.openai.com/v1",
     openaiModel: "gpt-4o-mini",
+    openaiReasoningEffort: undefined,
     codexModel: "gpt-5.1-codex",
   };
 }
@@ -402,7 +406,8 @@ const runner = createJobRunner({
             schema: tasksJsonSchema,
             system,
             user,
-            maxOutputTokens: 1200,
+            reasoningEffort: currentSettings.openaiReasoningEffort,
+            maxOutputTokens: currentSettings.llmMaxOutputTokens,
           });
         } else {
           const st = await codex.status();
@@ -475,6 +480,45 @@ const app = new Elysia()
     });
   })
   .get("/api/logs", () => ({ logs: logger.getRecent(300) }))
+  .get("/api/openai/models", async () => {
+    let headers: { Authorization: string };
+    try {
+      headers = await openaiAuth.getAuthHeaders();
+    } catch {
+      return new Response(JSON.stringify({ error: "OPENAI_AUTH_REQUIRED" }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const url = new URL("/models", currentSettings.openaiApiBaseUrl);
+    const res = await fetch(url, {
+      headers: { Authorization: headers.Authorization },
+    });
+    const text = await res.text();
+    if (!res.ok) {
+      return new Response(
+        JSON.stringify({ error: `OPENAI_MODELS_FAILED: ${res.status}`, detail: text.slice(0, 400) }),
+        { status: 502, headers: { "Content-Type": "application/json" } }
+      );
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return new Response(JSON.stringify({ error: "OPENAI_MODELS_NON_JSON" }), {
+        status: 502,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const ModelsSchema = z.object({
+      data: z.array(z.object({ id: z.string().min(1) }).passthrough()).default([]),
+    });
+    const models = ModelsSchema.parse(parsed).data.map((m) => m.id).sort((a, b) => a.localeCompare(b));
+    return { models };
+  })
   .get("/api/auth/codex/status", async () => await codex.status())
   .post("/api/auth/codex/start", async () => {
     const res = await codex.loginStartChatgpt();
@@ -691,9 +735,11 @@ const app = new Elysia()
       watchRoots: parsed.watchRoots,
       ingestEnabled: parsed.ingestEnabled,
       llmProvider: parsed.llmProvider,
+      llmMaxOutputTokens: parsed.llmMaxOutputTokens,
       openaiOAuthConfigured: Boolean(parsed.openaiOAuth?.clientId),
       codexModel: parsed.codexModel,
       openaiModel: parsed.openaiModel,
+      openaiReasoningEffort: parsed.openaiReasoningEffort ?? null,
     });
     return { ok: true };
   })
