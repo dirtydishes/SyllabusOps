@@ -19,6 +19,38 @@ export type Settings = {
   };
 };
 
+export type CourseSummary = {
+  slug: string;
+  name: string;
+  sessionsCount: number;
+  artifactsCount: number;
+  lastIngestedAt: string | null;
+};
+
+export type ArtifactSummary = {
+  id: string;
+  kind: "transcript" | "slides" | "unknown";
+  fileName: string;
+  relPath: string;
+  sha256: string;
+  ingestedAt: string;
+  sourcePath: string;
+  ext: string;
+  cache: { type: "transcripts" | "pptx" | "pdf" | null; extractedTextAvailable: boolean };
+  generated: { artifactSummaryPath: string };
+};
+
+export type SessionSummary = {
+  date: string;
+  artifacts: ArtifactSummary[];
+  generated: { sessionSummaryPath: string; sessionNotesPath: string };
+};
+
+export type CourseDetail = {
+  course: { slug: string; name: string };
+  sessions: SessionSummary[];
+};
+
 export type FsEntry = { name: string; type: "file" | "dir" };
 export type FsListResponse = { path: string; entries: FsEntry[] };
 export type FsReadResponse = { path: string; content: string; sha256: string };
@@ -40,6 +72,26 @@ async function http<T>(
 
 export async function getStatus(): Promise<ApiStatus> {
   return await http<ApiStatus>("/api/status");
+}
+
+export async function getCourses(): Promise<{ courses: CourseSummary[] }> {
+  return await http<{ courses: CourseSummary[] }>("/api/courses");
+}
+
+export async function getCourseDetail(courseSlug: string): Promise<CourseDetail> {
+  return await http<CourseDetail>(`/api/courses/${encodeURIComponent(courseSlug)}`);
+}
+
+export async function getExtractedText(input: {
+  cache: "transcripts" | "pptx" | "pdf";
+  sha: string;
+  maxChars?: number;
+}): Promise<{ ok: true; truncated: boolean; text: string }> {
+  const url = new URL("/api/artifacts/extracted", window.location.origin);
+  url.searchParams.set("cache", input.cache);
+  url.searchParams.set("sha", input.sha);
+  if (input.maxChars) url.searchParams.set("maxChars", String(input.maxChars));
+  return await http<{ ok: true; truncated: boolean; text: string }>(url);
 }
 
 export async function getSettings(): Promise<Settings> {

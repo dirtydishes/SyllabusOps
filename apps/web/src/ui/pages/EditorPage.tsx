@@ -3,6 +3,7 @@ import CodeMirror from "@uiw/react-codemirror";
 import { useEffect, useMemo, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { useSearchParams } from "react-router-dom";
 import {
   type FsEntry,
   type FsRevision,
@@ -20,6 +21,7 @@ function joinPath(a: string, b: string): string {
 }
 
 export function EditorPage() {
+  const [searchParams] = useSearchParams();
   const [cwd, setCwd] = useState("");
   const [entries, setEntries] = useState<FsEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -53,6 +55,7 @@ export function EditorPage() {
   async function openFile(relPath: string) {
     setError(null);
     setStatus("Reading…");
+    let finalStatus: string = "Idle";
     try {
       const r = await fsRead(relPath);
       setSelectedPath(relPath);
@@ -61,9 +64,18 @@ export function EditorPage() {
       const rev = await fsRevisions(relPath);
       setRevisions(rev.revisions);
     } catch (e: unknown) {
-      setError(String((e as Error)?.message ?? e));
+      const msg = String((e as Error)?.message ?? e);
+      if (msg.includes("FS_NOT_FOUND")) {
+        setSelectedPath(relPath);
+        setContent("");
+        setLoadedSha(undefined);
+        setRevisions([]);
+        finalStatus = "New file";
+      } else {
+        setError(msg);
+      }
     } finally {
-      setStatus("Idle");
+      setStatus(finalStatus);
     }
   }
 
@@ -108,6 +120,16 @@ export function EditorPage() {
     () => (cwd ? cwd.split("/").filter(Boolean) : []),
     [cwd]
   );
+
+  useEffect(() => {
+    const p = searchParams.get("path");
+    if (!p) return;
+    const dir = p.split("/").slice(0, -1).join("/");
+    setCwd(dir);
+    void openFile(p);
+    // only run on mount; searchParams identity is stable but may change on navigation
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div className="page editor-page">

@@ -1,4 +1,6 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { ClassDetailPage } from "./pages/ClassDetailPage";
+import { ClassesPage } from "./pages/ClassesPage";
 import { EditorPage } from "./pages/EditorPage";
 import { LogsPage } from "./pages/LogsPage";
 import { OverviewPage } from "./pages/OverviewPage";
@@ -21,6 +23,14 @@ function Shell(props: { children: React.ReactNode }) {
             }
           >
             Overview
+          </NavLink>
+          <NavLink
+            to="/classes"
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
+          >
+            Classes
           </NavLink>
           <NavLink
             to="/editor"
@@ -61,6 +71,8 @@ export function App() {
     <Shell>
       <Routes>
         <Route path="/" element={<OverviewPage />} />
+        <Route path="/classes" element={<ClassesPage />} />
+        <Route path="/classes/:courseSlug" element={<ClassDetailPage />} />
         <Route path="/editor" element={<EditorPage />} />
         <Route path="/logs" element={<LogsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
