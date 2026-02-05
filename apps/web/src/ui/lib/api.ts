@@ -81,7 +81,8 @@ export type JobType =
   | "extract_transcript"
   | "extract_pptx"
   | "extract_pdf"
-  | "suggest_tasks";
+  | "suggest_tasks"
+  | "summarize_session";
 
 export type JobRecord = {
   id: string;
@@ -159,6 +160,17 @@ export async function suggestTasks(input: {
   sessionDate: string;
 }): Promise<{ job: unknown }> {
   return await http<{ job: unknown }>("/api/tasks/suggest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function summarizeSession(input: {
+  courseSlug: string;
+  sessionDate: string;
+}): Promise<{ job: unknown }> {
+  return await http<{ job: unknown }>("/api/sessions/summarize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),

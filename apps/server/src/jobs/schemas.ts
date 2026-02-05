@@ -16,6 +16,7 @@ export const JobTypeSchema = z.enum([
   "extract_pptx",
   "extract_pdf",
   "suggest_tasks",
+  "summarize_session",
 ]);
 export type JobType = z.infer<typeof JobTypeSchema>;
 

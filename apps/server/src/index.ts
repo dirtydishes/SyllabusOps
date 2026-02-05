@@ -6,6 +6,7 @@ import {
   FsReadResponseSchema,
   FsWriteRequestSchema,
 } from "@syllabusops/core";
+import { resolveWithinRoot } from "@syllabusops/core";
 import { Elysia } from "elysia";
 import { z } from "zod";
 import {
@@ -474,6 +475,226 @@ const runner = createJobRunner({
 
         return "succeed";
       }
+      case "summarize_session": {
+        const payload = JSON.parse(job.payload_json) as {
+          courseSlug?: unknown;
+          sessionDate?: unknown;
+        };
+        const courseSlug =
+          typeof payload.courseSlug === "string" ? payload.courseSlug : null;
+        const sessionDate =
+          typeof payload.sessionDate === "string" ? payload.sessionDate : null;
+        if (!courseSlug || !sessionDate) {
+          throw new Error(
+            "Invalid summarize_session payload: courseSlug and sessionDate required."
+          );
+        }
+
+        if (currentSettings.llmProvider === "openai") {
+          if (!currentSettings.openaiModel?.trim()) {
+            queue.block(job.id, "OPENAI_MODEL_REQUIRED");
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "OPENAI_MODEL_REQUIRED",
+            });
+            return "skip";
+          }
+        } else {
+          if (!currentSettings.codexModel?.trim()) {
+            queue.block(job.id, "CODEX_MODEL_REQUIRED");
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "CODEX_MODEL_REQUIRED",
+            });
+            return "skip";
+          }
+        }
+
+        const scanned = await scanSession({
+          unifiedDir: currentSettings.unifiedDir,
+          stateDir: config.stateDir,
+          courseSlug,
+          sessionDate,
+        });
+        if (!scanned.ok) {
+          queue.block(job.id, scanned.error);
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: scanned.error,
+          });
+          return "skip";
+        }
+
+        const maxCharsPerArtifact = 45_000;
+        const contextParts: string[] = [];
+        for (const a of scanned.session.artifacts) {
+          if (!a.cache.type || !a.cache.extractedTextAvailable) continue;
+          const p = path.join(
+            config.stateDir,
+            "cache",
+            a.cache.type,
+            `${a.sha256}.txt`
+          );
+          let text = await fs.readFile(p, "utf8");
+          if (text.length > maxCharsPerArtifact)
+            text = `${text.slice(0, maxCharsPerArtifact)}\n`;
+          contextParts.push(
+            `=== ${a.kind.toUpperCase()} (${a.fileName}) ===\n${text.trim()}\n`
+          );
+        }
+
+        if (contextParts.length === 0) {
+          queue.block(job.id, "NO_EXTRACTED_TEXT");
+          logger.warn("job.blocked", { job_id: job.id, reason: "NO_EXTRACTED_TEXT" });
+          return "skip";
+        }
+
+        const SummarySchema = z.object({
+          title: z.string().min(1),
+          date: z.string().min(1),
+          overview: z.string().default(""),
+          keyPoints: z.array(z.string()).default([]),
+          vocabulary: z
+            .array(z.object({ term: z.string().min(1), definition: z.string().min(1) }))
+            .default([]),
+          actionItems: z.array(z.string()).default([]),
+          questions: z.array(z.string()).default([]),
+        });
+
+        const summaryJsonSchema = {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            title: { type: "string" },
+            date: { type: "string" },
+            overview: { type: "string" },
+            keyPoints: { type: "array", items: { type: "string" } },
+            vocabulary: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                properties: {
+                  term: { type: "string" },
+                  definition: { type: "string" },
+                },
+                required: ["term", "definition"],
+              },
+            },
+            actionItems: { type: "array", items: { type: "string" } },
+            questions: { type: "array", items: { type: "string" } },
+          },
+          required: [
+            "title",
+            "date",
+            "overview",
+            "keyPoints",
+            "vocabulary",
+            "actionItems",
+            "questions",
+          ],
+        } as const;
+
+        const system =
+          "You generate a concise, student-friendly session summary from class materials. " +
+          "Return only JSON that matches the provided schema. " +
+          "Do not include anything not grounded in the provided context.";
+
+        const user =
+          `Course: ${scanned.course.name} (${courseSlug})\n` +
+          `Session date: ${sessionDate}\n\n` +
+          contextParts.join("\n");
+
+        let raw: unknown;
+        if (currentSettings.llmProvider === "openai") {
+          let headers: { Authorization: string };
+          try {
+            headers = await openaiAuth.getAuthHeaders();
+          } catch {
+            queue.block(job.id, "OPENAI_AUTH_REQUIRED");
+            logger.warn("job.blocked", {
+              job_id: job.id,
+              reason: "OPENAI_AUTH_REQUIRED",
+            });
+            return "skip";
+          }
+          raw = await openAiJsonSchema<unknown>({
+            apiBaseUrl: currentSettings.openaiApiBaseUrl,
+            model: currentSettings.openaiModel,
+            headers,
+            schemaName: "syllabusops_session_summary_v1",
+            schema: summaryJsonSchema,
+            system,
+            user,
+            reasoningEffort: currentSettings.openaiReasoningEffort,
+            maxOutputTokens: currentSettings.llmMaxOutputTokens,
+          });
+        } else {
+          const st = await codex.status();
+          if (!st.available) {
+            queue.block(job.id, "CODEX_UNAVAILABLE");
+            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_UNAVAILABLE" });
+            return "skip";
+          }
+          if (st.requiresOpenaiAuth && !st.connected) {
+            queue.block(job.id, "CODEX_AUTH_REQUIRED");
+            logger.warn("job.blocked", { job_id: job.id, reason: "CODEX_AUTH_REQUIRED" });
+            return "skip";
+          }
+          raw = await codex.jsonSchemaTurn<unknown>({
+            model: currentSettings.codexModel,
+            effort: currentSettings.codexEffort,
+            system,
+            user,
+            schemaName: "syllabusops_session_summary_v1",
+            schema: summaryJsonSchema,
+          });
+        }
+
+        const parsed = SummarySchema.parse(raw);
+
+        const md: string[] = [];
+        md.push(`# ${parsed.title}`);
+        md.push("");
+        md.push(`**Session:** ${parsed.date}`);
+        md.push(`**Generated:** ${new Date().toISOString()}`);
+        md.push("");
+        md.push("> This file is generated by SyllabusOps. If you want to keep manual edits, put them in session Notes.");
+        md.push("");
+        md.push("## Overview");
+        md.push(parsed.overview?.trim() ? parsed.overview.trim() : "_(no overview)_");
+        md.push("");
+        md.push("## Key points");
+        if (parsed.keyPoints.length === 0) md.push("_(none)_");
+        for (const kp of parsed.keyPoints) md.push(`- ${kp}`);
+        md.push("");
+        md.push("## Vocabulary");
+        if (parsed.vocabulary.length === 0) md.push("_(none)_");
+        for (const v of parsed.vocabulary) md.push(`- **${v.term}**: ${v.definition}`);
+        md.push("");
+        md.push("## Action items");
+        if (parsed.actionItems.length === 0) md.push("_(none)_");
+        for (const it of parsed.actionItems) md.push(`- ${it}`);
+        md.push("");
+        md.push("## Questions to ask");
+        if (parsed.questions.length === 0) md.push("_(none)_");
+        for (const q of parsed.questions) md.push(`- ${q}`);
+        md.push("");
+
+        const relPath = `${courseSlug}/generated/sessions/${sessionDate}/session-summary.md`;
+        const resolved = resolveWithinRoot(currentSettings.unifiedDir, relPath);
+        if (!resolved.ok) throw new Error("SUMMARY_PATH_DENIED");
+        await fs.mkdir(path.dirname(resolved.absolutePath), { recursive: true });
+        await fs.writeFile(resolved.absolutePath, `${md.join("\n")}\n`, "utf8");
+
+        logger.info("summary.session.generated", {
+          courseSlug,
+          sessionDate,
+          relPath,
+        });
+
+        return "succeed";
+      }
     }
   },
 });
@@ -641,6 +862,25 @@ const app = new Elysia()
       priority: 2,
     });
     logger.info("tasks.suggest_job_enqueued", {
+      job_id: job.id,
+      courseSlug: b.courseSlug,
+      sessionDate: b.sessionDate,
+    });
+    return { job };
+  })
+  .post("/api/sessions/summarize", ({ body }) => {
+    const b = z
+      .object({
+        courseSlug: z.string().min(1),
+        sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+      .parse(body);
+    const job = queue.enqueue({
+      jobType: "summarize_session",
+      payload: { courseSlug: b.courseSlug, sessionDate: b.sessionDate },
+      priority: 2,
+    });
+    logger.info("summary.session.job_enqueued", {
       job_id: job.id,
       courseSlug: b.courseSlug,
       sessionDate: b.sessionDate,

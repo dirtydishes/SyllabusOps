@@ -10,6 +10,7 @@ import {
   getExtractedText,
   getTasks,
   markTaskDone,
+  summarizeSession,
   suggestTasks,
 } from "../lib/api";
 
@@ -29,6 +30,9 @@ export function ClassDetailPage() {
   const [tasks, setTasks] = useState<TaskRow[] | null>(null);
   const [tasksBusy, setTasksBusy] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [summaryMsg, setSummaryMsg] = useState<string | null>(null);
 
   const [preview, setPreview] = useState<{
     title: string;
@@ -123,6 +127,21 @@ export function ClassDetailPage() {
       setTasksError(String((e as Error)?.message ?? e));
     } finally {
       setTasksBusy(false);
+    }
+  }
+
+  async function onSummarizeSession() {
+    if (!courseSlug || !session?.date) return;
+    setSummaryError(null);
+    setSummaryMsg(null);
+    setSummaryBusy(true);
+    try {
+      await summarizeSession({ courseSlug, sessionDate: session.date });
+      setSummaryMsg("Summary job queued. Open Summary to view (refresh after it completes).");
+    } catch (e: unknown) {
+      setSummaryError(String((e as Error)?.message ?? e));
+    } finally {
+      setSummaryBusy(false);
     }
   }
 
@@ -223,6 +242,14 @@ export function ClassDetailPage() {
                   >
                     Suggest Tasks
                   </button>
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={summaryBusy || !detail}
+                    onClick={() => void onSummarizeSession()}
+                  >
+                    {summaryBusy ? "Generating…" : "Generate Summary"}
+                  </button>
                   <Link
                     className="button"
                     to={`/editor?path=${encodeURIComponent(session.generated.sessionNotesPath)}`}
@@ -230,7 +257,7 @@ export function ClassDetailPage() {
                     Notes
                   </Link>
                   <Link
-                    className="button primary"
+                    className="button"
                     to={`/editor?path=${encodeURIComponent(session.generated.sessionSummaryPath)}`}
                   >
                     Summary
@@ -238,6 +265,9 @@ export function ClassDetailPage() {
                 </div>
               ) : null}
             </div>
+
+            {summaryError ? <div className="muted">Summary error: {summaryError}</div> : null}
+            {summaryMsg ? <div className="muted">{summaryMsg}</div> : null}
 
             {!session ? (
               <div className="muted">Select a session.</div>
