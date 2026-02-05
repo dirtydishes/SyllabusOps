@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   type CourseSummary,
   type TaskRow,
@@ -38,7 +38,7 @@ export function TasksPage() {
       .then((r) => {
         if (cancelled) return;
         setCourses(r.courses);
-        if (!selectedCourse && r.courses[0]?.slug) setSelectedCourse(r.courses[0].slug);
+        setSelectedCourse((prev) => prev || r.courses[0]?.slug || "");
       })
       .catch((e) => {
         if (!cancelled) setError(String(e?.message ?? e));
@@ -46,10 +46,9 @@ export function TasksPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     if (!selectedCourse) return;
     setBusy(true);
     setError(null);
@@ -61,14 +60,16 @@ export function TasksPage() {
     } finally {
       setBusy(false);
     }
-  }
+  }, [selectedCourse]);
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourse]);
+  }, [refresh]);
 
-  async function setTaskStatus(id: string, action: "approve" | "dismiss" | "done") {
+  async function setTaskStatus(
+    id: string,
+    action: "approve" | "dismiss" | "done"
+  ) {
     setBusy(true);
     setError(null);
     try {
@@ -130,7 +131,12 @@ export function TasksPage() {
               <div className="muted mono">{selectedCourse || "—"}</div>
             </div>
             <div className="row">
-              <button type="button" className="button" disabled={busy} onClick={() => void refresh()}>
+              <button
+                type="button"
+                className="button"
+                disabled={busy}
+                onClick={() => void refresh()}
+              >
                 Refresh
               </button>
             </div>
@@ -143,13 +149,16 @@ export function TasksPage() {
           ) : (
             <>
               <div className="muted" style={{ marginTop: 10 }}>
-                Approved tasks are your TODO list. Suggested tasks are waiting for approval.
+                Approved tasks are your TODO list. Suggested tasks are waiting
+                for approval.
               </div>
 
               <div style={{ marginTop: 14 }}>
                 <div className="row row-between">
                   <div className="mono">TODO (Approved)</div>
-                  <span className="chip chip-ok">{buckets.approved.length}</span>
+                  <span className="chip chip-ok">
+                    {buckets.approved.length}
+                  </span>
                 </div>
                 {buckets.approved.length === 0 ? (
                   <div className="muted" style={{ marginTop: 8 }}>
@@ -159,15 +168,24 @@ export function TasksPage() {
                   <div className="task-list" style={{ marginTop: 8 }}>
                     {buckets.approved.map((t) => (
                       <div key={t.id} className="task-item">
-                        <div className="row row-between" style={{ width: "100%" }}>
+                        <div
+                          className="row row-between"
+                          style={{ width: "100%" }}
+                        >
                           <div>
                             <div className="mono">{t.title}</div>
                             <div className="muted" style={{ marginTop: 4 }}>
                               {t.description}
                             </div>
-                            <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
-                              {t.session_date ? `session: ${t.session_date}` : "no session"} •{" "}
-                              {t.due ? `due: ${t.due}` : "no due"} • conf: {t.confidence.toFixed(2)}
+                            <div
+                              className="muted mono"
+                              style={{ marginTop: 6, fontSize: 12 }}
+                            >
+                              {t.session_date
+                                ? `session: ${t.session_date}`
+                                : "no session"}{" "}
+                              • {t.due ? `due: ${t.due}` : "no due"} • conf:{" "}
+                              {t.confidence.toFixed(2)}
                             </div>
                           </div>
                           <div className="row">
@@ -183,7 +201,9 @@ export function TasksPage() {
                               type="button"
                               className="button"
                               disabled={busy}
-                              onClick={() => void setTaskStatus(t.id, "dismiss")}
+                              onClick={() =>
+                                void setTaskStatus(t.id, "dismiss")
+                              }
                             >
                               Dismiss
                             </button>
@@ -198,7 +218,9 @@ export function TasksPage() {
               <div style={{ marginTop: 16 }}>
                 <div className="row row-between">
                   <div className="mono">Suggested</div>
-                  <span className="chip chip-neutral">{buckets.suggested.length}</span>
+                  <span className="chip chip-neutral">
+                    {buckets.suggested.length}
+                  </span>
                 </div>
                 {buckets.suggested.length === 0 ? (
                   <div className="muted" style={{ marginTop: 8 }}>
@@ -208,15 +230,24 @@ export function TasksPage() {
                   <div className="task-list" style={{ marginTop: 8 }}>
                     {buckets.suggested.map((t) => (
                       <div key={t.id} className="task-item">
-                        <div className="row row-between" style={{ width: "100%" }}>
+                        <div
+                          className="row row-between"
+                          style={{ width: "100%" }}
+                        >
                           <div>
                             <div className="mono">{t.title}</div>
                             <div className="muted" style={{ marginTop: 4 }}>
                               {t.description}
                             </div>
-                            <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
-                              {t.session_date ? `session: ${t.session_date}` : "no session"} •{" "}
-                              {t.due ? `due: ${t.due}` : "no due"} • conf: {t.confidence.toFixed(2)}
+                            <div
+                              className="muted mono"
+                              style={{ marginTop: 6, fontSize: 12 }}
+                            >
+                              {t.session_date
+                                ? `session: ${t.session_date}`
+                                : "no session"}{" "}
+                              • {t.due ? `due: ${t.due}` : "no due"} • conf:{" "}
+                              {t.confidence.toFixed(2)}
                             </div>
                           </div>
                           <div className="row">
@@ -224,7 +255,9 @@ export function TasksPage() {
                               type="button"
                               className="button primary"
                               disabled={busy}
-                              onClick={() => void setTaskStatus(t.id, "approve")}
+                              onClick={() =>
+                                void setTaskStatus(t.id, "approve")
+                              }
                             >
                               Approve
                             </button>
@@ -232,7 +265,9 @@ export function TasksPage() {
                               type="button"
                               className="button"
                               disabled={busy}
-                              onClick={() => void setTaskStatus(t.id, "dismiss")}
+                              onClick={() =>
+                                void setTaskStatus(t.id, "dismiss")
+                              }
                             >
                               Dismiss
                             </button>
@@ -250,4 +285,3 @@ export function TasksPage() {
     </div>
   );
 }
-

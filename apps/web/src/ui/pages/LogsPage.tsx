@@ -15,6 +15,8 @@ export function LogsPage() {
   const [paused, setPaused] = useState(false);
   const [level, setLevel] = useState<LogEvent["level"] | "all">("all");
   const [q, setQ] = useState("");
+  const levelId = "logs-level";
+  const searchId = "logs-search";
 
   useEffect(() => {
     const es = new EventSource("/api/events");
@@ -59,7 +61,9 @@ export function LogsPage() {
           <span className={connected ? "chip chip-ok" : "chip chip-warn"}>
             {connected ? "Live" : "Offline"}
           </span>
-          <span className="chip chip-neutral">{paused ? "Paused" : "Streaming"}</span>
+          <span className="chip chip-neutral">
+            {paused ? "Paused" : "Streaming"}
+          </span>
           {error ? <span className="muted">• {error}</span> : null}
         </div>
       </div>
@@ -67,11 +71,14 @@ export function LogsPage() {
       <div className="card">
         <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
           <div className="field" style={{ minWidth: 180 }}>
-            <label>Level</label>
+            <label htmlFor={levelId}>Level</label>
             <select
+              id={levelId}
               className="input"
               value={level}
-              onChange={(e) => setLevel((e.target.value as LogEvent["level"]) || "all")}
+              onChange={(e) =>
+                setLevel((e.target.value as LogEvent["level"]) || "all")
+              }
             >
               <option value="all">All</option>
               <option value="debug">debug</option>
@@ -82,17 +89,31 @@ export function LogsPage() {
           </div>
 
           <div className="field" style={{ minWidth: 280, flex: 1 }}>
-            <label>Search</label>
-            <input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="event or message…" />
+            <label htmlFor={searchId}>Search</label>
+            <input
+              id={searchId}
+              className="input"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="event or message…"
+            />
           </div>
 
           <div className="field" style={{ minWidth: 220 }}>
-            <label>Controls</label>
+            <div className="field-label">Controls</div>
             <div className="row" style={{ marginTop: 6 }}>
-              <button type="button" className="button" onClick={() => setPaused((p) => !p)}>
+              <button
+                type="button"
+                className="button"
+                onClick={() => setPaused((p) => !p)}
+              >
                 {paused ? "Resume" : "Pause"}
               </button>
-              <button type="button" className="button" onClick={() => setLogs([])}>
+              <button
+                type="button"
+                className="button"
+                onClick={() => setLogs([])}
+              >
                 Clear
               </button>
             </div>

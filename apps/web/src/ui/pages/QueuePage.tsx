@@ -1,13 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   type JobRecord,
   type JobStatus,
   type JobType,
-  getJobs,
   getJobStats,
+  getJobs,
 } from "../lib/api";
 
-const Statuses: Array<JobStatus> = ["queued", "running", "succeeded", "failed", "blocked"];
+const Statuses: Array<JobStatus> = [
+  "queued",
+  "running",
+  "succeeded",
+  "failed",
+  "blocked",
+];
 const Types: Array<JobType> = [
   "ingest_file",
   "extract_transcript",
@@ -28,13 +34,16 @@ export function QueuePage() {
   const [type, setType] = useState<JobType | "all">("all");
   const [limit, setLimit] = useState(200);
   const [auto, setAuto] = useState(true);
+  const statusId = "queue-status";
+  const typeId = "queue-type";
+  const limitId = "queue-limit";
 
   const [stats, setStats] = useState<Record<JobStatus, number> | null>(null);
   const [jobs, setJobs] = useState<JobRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
@@ -53,19 +62,17 @@ export function QueuePage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [limit, status, type]);
 
   useEffect(() => {
     void refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status, type, limit]);
+  }, [refresh]);
 
   useEffect(() => {
     if (!auto) return;
     const t = window.setInterval(() => void refresh(), 2000);
     return () => window.clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [auto, status, type, limit]);
+  }, [auto, refresh]);
 
   const rows = useMemo(() => jobs ?? [], [jobs]);
 
@@ -74,13 +81,20 @@ export function QueuePage() {
       <div className="page-header">
         <h1>Queue</h1>
         <div className="row">
-          <button type="button" className="button" disabled={loading} onClick={() => void refresh()}>
+          <button
+            type="button"
+            className="button"
+            disabled={loading}
+            onClick={() => void refresh()}
+          >
             Refresh
           </button>
         </div>
       </div>
 
-      {error ? <div className="card card-error">Failed to load: {error}</div> : null}
+      {error ? (
+        <div className="card card-error">Failed to load: {error}</div>
+      ) : null}
 
       <div className="grid">
         <div className="card">
@@ -105,11 +119,14 @@ export function QueuePage() {
           <div className="card-title">Filters</div>
           <div className="row" style={{ gap: 10, flexWrap: "wrap" }}>
             <div className="field" style={{ minWidth: 200 }}>
-              <label>Status</label>
+              <label htmlFor={statusId}>Status</label>
               <select
+                id={statusId}
                 className="input"
                 value={status}
-                onChange={(e) => setStatus((e.target.value as JobStatus) || "all")}
+                onChange={(e) =>
+                  setStatus((e.target.value as JobStatus) || "all")
+                }
               >
                 <option value="all">All</option>
                 {Statuses.map((s) => (
@@ -121,8 +138,9 @@ export function QueuePage() {
             </div>
 
             <div className="field" style={{ minWidth: 240 }}>
-              <label>Type</label>
+              <label htmlFor={typeId}>Type</label>
               <select
+                id={typeId}
                 className="input"
                 value={type}
                 onChange={(e) => setType((e.target.value as JobType) || "all")}
@@ -137,8 +155,9 @@ export function QueuePage() {
             </div>
 
             <div className="field" style={{ minWidth: 160 }}>
-              <label>Limit</label>
+              <label htmlFor={limitId}>Limit</label>
               <input
+                id={limitId}
                 className="input"
                 type="number"
                 min={10}
@@ -149,9 +168,13 @@ export function QueuePage() {
             </div>
 
             <div className="field" style={{ minWidth: 160 }}>
-              <label>Auto refresh</label>
+              <div className="field-label">Auto refresh</div>
               <label className="row" style={{ gap: 8, marginTop: 6 }}>
-                <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} />
+                <input
+                  type="checkbox"
+                  checked={auto}
+                  onChange={(e) => setAuto(e.target.checked)}
+                />
                 <span className="muted">every 2s</span>
               </label>
             </div>
@@ -193,4 +216,3 @@ export function QueuePage() {
     </div>
   );
 }
-

@@ -44,7 +44,10 @@ export type ArtifactSummary = {
   ingestedAt: string;
   sourcePath: string;
   ext: string;
-  cache: { type: "transcripts" | "pptx" | "pdf" | null; extractedTextAvailable: boolean };
+  cache: {
+    type: "transcripts" | "pptx" | "pdf" | null;
+    extractedTextAvailable: boolean;
+  };
   generated: { artifactSummaryPath: string };
 };
 
@@ -75,7 +78,12 @@ export type TaskRow = {
   updated_at: string;
 };
 
-export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "blocked";
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "blocked";
 export type JobType =
   | "noop"
   | "ingest_file"
@@ -126,16 +134,26 @@ export async function getCourses(): Promise<{ courses: CourseSummary[] }> {
   return await http<{ courses: CourseSummary[] }>("/api/courses");
 }
 
-export async function getCourseDetail(courseSlug: string): Promise<CourseDetail> {
-  return await http<CourseDetail>(`/api/courses/${encodeURIComponent(courseSlug)}`);
+export async function getCourseDetail(
+  courseSlug: string
+): Promise<CourseDetail> {
+  return await http<CourseDetail>(
+    `/api/courses/${encodeURIComponent(courseSlug)}`
+  );
 }
 
-export async function renameCourse(courseSlug: string, name: string): Promise<{ ok: true }> {
-  return await http<{ ok: true }>(`/api/courses/${encodeURIComponent(courseSlug)}/rename`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name }),
-  });
+export async function renameCourse(
+  courseSlug: string,
+  name: string
+): Promise<{ ok: true }> {
+  return await http<{ ok: true }>(
+    `/api/courses/${encodeURIComponent(courseSlug)}/rename`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    }
+  );
 }
 
 export async function mergeCourses(input: {
@@ -143,11 +161,14 @@ export async function mergeCourses(input: {
   sourceSlugs: string[];
   name?: string;
 }): Promise<{ ok: true; destinationSlug: string }> {
-  return await http<{ ok: true; destinationSlug: string }>("/api/courses/merge", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
-  });
+  return await http<{ ok: true; destinationSlug: string }>(
+    "/api/courses/merge",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(input),
+    }
+  );
 }
 
 export async function getExtractedText(input: {
@@ -198,22 +219,37 @@ export async function summarizeSession(input: {
   });
 }
 
-export async function approveTask(id: string): Promise<{ ok: true; changed: number }> {
-  return await http<{ ok: true; changed: number }>(`/api/tasks/${encodeURIComponent(id)}/approve`, {
-    method: "POST",
-  });
+export async function approveTask(
+  id: string
+): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>(
+    `/api/tasks/${encodeURIComponent(id)}/approve`,
+    {
+      method: "POST",
+    }
+  );
 }
 
-export async function dismissTask(id: string): Promise<{ ok: true; changed: number }> {
-  return await http<{ ok: true; changed: number }>(`/api/tasks/${encodeURIComponent(id)}/dismiss`, {
-    method: "POST",
-  });
+export async function dismissTask(
+  id: string
+): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>(
+    `/api/tasks/${encodeURIComponent(id)}/dismiss`,
+    {
+      method: "POST",
+    }
+  );
 }
 
-export async function markTaskDone(id: string): Promise<{ ok: true; changed: number }> {
-  return await http<{ ok: true; changed: number }>(`/api/tasks/${encodeURIComponent(id)}/done`, {
-    method: "POST",
-  });
+export async function markTaskDone(
+  id: string
+): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>(
+    `/api/tasks/${encodeURIComponent(id)}/done`,
+    {
+      method: "POST",
+    }
+  );
 }
 
 export async function getJobs(input: {
@@ -228,7 +264,9 @@ export async function getJobs(input: {
   return await http<{ jobs: JobRecord[] }>(url);
 }
 
-export async function getJobStats(): Promise<{ counts: Record<JobStatus, number> }> {
+export async function getJobStats(): Promise<{
+  counts: Record<JobStatus, number>;
+}> {
   return await http<{ counts: Record<JobStatus, number> }>("/api/jobs/stats");
 }
 
@@ -242,7 +280,10 @@ export type CodexModelInfo = {
   description?: string;
   isDefault?: boolean;
   defaultReasoningEffort?: string;
-  supportedReasoningEfforts?: Array<{ reasoningEffort: string; description?: string }>;
+  supportedReasoningEfforts?: Array<{
+    reasoningEffort: string;
+    description?: string;
+  }>;
 };
 
 export async function getCodexModels(): Promise<{ models: CodexModelInfo[] }> {
@@ -266,14 +307,15 @@ export async function adminReset(input: {
   confirm: "RESET";
   unifiedDir?: string;
 }): Promise<{ ok: true; unifiedDeleted: number; ingestEnabled: boolean }> {
-  return await http<{ ok: true; unifiedDeleted: number; ingestEnabled: boolean }>(
-    "/api/admin/reset",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    }
-  );
+  return await http<{
+    ok: true;
+    unifiedDeleted: number;
+    ingestEnabled: boolean;
+  }>("/api/admin/reset", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export async function fsList(relPath: string): Promise<FsListResponse> {

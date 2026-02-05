@@ -8,7 +8,6 @@ import {
   getSettings,
   saveSettings,
 } from "../lib/api";
-import { formatLocalTimeOnYmd } from "../lib/time";
 import {
   type CodexStatus,
   codexLogout,
@@ -23,6 +22,7 @@ import {
   setOpenAiApiKey,
   startOpenAiOAuth,
 } from "../lib/openai";
+import { formatLocalTimeOnYmd } from "../lib/time";
 
 export function SettingsPage() {
   const [value, setValue] = useState<Settings | null>(null);
@@ -35,12 +35,16 @@ export function SettingsPage() {
   const [authBusy, setAuthBusy] = useState(false);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [openAiModels, setOpenAiModels] = useState<string[]>([]);
-  const [openAiModelsError, setOpenAiModelsError] = useState<string | null>(null);
+  const [openAiModelsError, setOpenAiModelsError] = useState<string | null>(
+    null
+  );
   const [codexModelsBusy, setCodexModelsBusy] = useState(false);
   const [codexModels, setCodexModels] = useState<CodexModelInfo[]>([]);
   const [codexModelsError, setCodexModelsError] = useState<string | null>(null);
   const [resetBusy, setResetBusy] = useState(false);
-  const [resetScope, setResetScope] = useState<"state" | "state+unified">("state");
+  const [resetScope, setResetScope] = useState<"state" | "state+unified">(
+    "state"
+  );
   const [resetConfirm, setResetConfirm] = useState("");
   const [resetMsg, setResetMsg] = useState<string | null>(null);
 
@@ -215,12 +219,15 @@ export function SettingsPage() {
       const res = await adminReset({
         scope: resetScope,
         confirm: "RESET",
-        unifiedDir: resetScope === "state+unified" ? value.unifiedDir : undefined,
+        unifiedDir:
+          resetScope === "state+unified" ? value.unifiedDir : undefined,
       });
       setResetConfirm("");
       setResetMsg(
         `Reset complete. Ingestion is now disabled. ${
-          resetScope === "state+unified" ? `Unified items removed: ${res.unifiedDeleted}.` : ""
+          resetScope === "state+unified"
+            ? `Unified items removed: ${res.unifiedDeleted}.`
+            : ""
         }`
       );
       setValue(await getSettings());
@@ -245,8 +252,9 @@ export function SettingsPage() {
   );
   const codexEffortOptions = useMemo(() => {
     const supported =
-      codexSelectedModel?.supportedReasoningEfforts?.map((e) => e.reasoningEffort) ??
-      [];
+      codexSelectedModel?.supportedReasoningEfforts?.map(
+        (e) => e.reasoningEffort
+      ) ?? [];
     const set = new Set(supported);
     const current = value?.codexEffort;
     if (current) set.add(current);
@@ -364,13 +372,17 @@ export function SettingsPage() {
             onChange={(e) =>
               setValue((v) =>
                 v
-                  ? { ...v, llmMaxOutputTokens: Number(e.target.value || "1200") }
+                  ? {
+                      ...v,
+                      llmMaxOutputTokens: Number(e.target.value || "1200"),
+                    }
                   : v
               )
             }
           />
           <div className="muted" style={{ marginTop: 6 }}>
-            Used for JSON-schema jobs (tasks/summaries). Higher = slower/more expensive.
+            Used for JSON-schema jobs (tasks/summaries). Higher = slower/more
+            expensive.
           </div>
         </div>
       </div>
@@ -398,7 +410,9 @@ export function SettingsPage() {
             {codexStatus?.connected ? (
               <span className="chip chip-ok">
                 Connected
-                {codexStatus.accountLabel ? ` (${codexStatus.accountLabel})` : ""}
+                {codexStatus.accountLabel
+                  ? ` (${codexStatus.accountLabel})`
+                  : ""}
               </span>
             ) : (
               <span className="chip chip-warn">Not connected</span>
@@ -514,7 +528,8 @@ export function SettingsPage() {
       <div className="card">
         <div className="card-title">OpenAI</div>
         <div className="muted">
-          OpenAI API calls typically use an API key (stored in macOS Keychain). OAuth is an advanced option.
+          OpenAI API calls typically use an API key (stored in macOS Keychain).
+          OAuth is an advanced option.
         </div>
 
         <div className="field" style={{ marginTop: 12 }}>
@@ -524,7 +539,9 @@ export function SettingsPage() {
             className="input mono"
             value={value?.openaiApiBaseUrl ?? ""}
             onChange={(e) =>
-              setValue((v) => (v ? { ...v, openaiApiBaseUrl: e.target.value } : v))
+              setValue((v) =>
+                v ? { ...v, openaiApiBaseUrl: e.target.value } : v
+              )
             }
             placeholder="https://api.openai.com/v1"
           />
@@ -578,7 +595,8 @@ export function SettingsPage() {
                       openaiReasoningEffort:
                         e.target.value === ""
                           ? undefined
-                          : (e.target.value as Settings["openaiReasoningEffort"]),
+                          : (e.target
+                              .value as Settings["openaiReasoningEffort"]),
                     }
                   : v
               )
@@ -590,7 +608,8 @@ export function SettingsPage() {
             <option value="high">High</option>
           </select>
           <div className="muted" style={{ marginTop: 6 }}>
-            Only applies to reasoning-capable models; others ignore or may reject it.
+            Only applies to reasoning-capable models; others ignore or may
+            reject it.
           </div>
         </div>
 
@@ -830,8 +849,9 @@ export function SettingsPage() {
       <div className="card" style={{ marginTop: 16 }}>
         <div className="card-title">Danger Zone</div>
         <div className="muted">
-          Clean slate: clears local state (jobs/tasks/cache/logs/revisions) and disables ingestion.
-          Optionally wipes the Unified library contents. Your original source files are not touched.
+          Clean slate: clears local state (jobs/tasks/cache/logs/revisions) and
+          disables ingestion. Optionally wipes the Unified library contents.
+          Your original source files are not touched.
         </div>
 
         <div className="field" style={{ marginTop: 12 }}>
@@ -847,8 +867,10 @@ export function SettingsPage() {
           </select>
           {resetScope === "state+unified" ? (
             <div className="muted" style={{ marginTop: 6 }}>
-              Will delete everything under <span className="mono">{value?.unifiedDir ?? "Unified"}</span>.
-              SyllabusOps refuses to wipe a folder whose name doesn’t include “Unified”.
+              Will delete everything under{" "}
+              <span className="mono">{value?.unifiedDir ?? "Unified"}</span>.
+              SyllabusOps refuses to wipe a folder whose name doesn’t include
+              “Unified”.
             </div>
           ) : null}
         </div>
@@ -868,7 +890,11 @@ export function SettingsPage() {
           <button
             type="button"
             className="button"
-            disabled={!value || resetBusy || resetConfirm.trim().toUpperCase() !== "RESET"}
+            disabled={
+              !value ||
+              resetBusy ||
+              resetConfirm.trim().toUpperCase() !== "RESET"
+            }
             onClick={onReset}
           >
             {resetBusy ? "Resetting…" : "Run reset"}

@@ -1,6 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { type CourseSummary, getCourses, mergeCourses, renameCourse } from "../lib/api";
+import {
+  type CourseSummary,
+  getCourses,
+  mergeCourses,
+  renameCourse,
+} from "../lib/api";
 import { formatLocalTimeOnYmd } from "../lib/time";
 
 function fmtIso(iso: string | null): string {
@@ -19,7 +24,7 @@ export function ClassesPage() {
   const [mergeDest, setMergeDest] = useState("");
   const [mergeName, setMergeName] = useState("");
 
-  async function refresh() {
+  const refresh = useCallback(async () => {
     setError(null);
     setLoading(true);
     try {
@@ -30,11 +35,11 @@ export function ClassesPage() {
     } finally {
       setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
     void refresh();
-  }, []);
+  }, [refresh]);
 
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const allSelected = useMemo(() => {
@@ -48,11 +53,11 @@ export function ClassesPage() {
   }, [courses, selectedSet]);
 
   useEffect(() => {
-    if (selectedCourses.length === 1) setRenameDraft(selectedCourses[0]!.name);
-    if (selectedCourses.length >= 2 && !selectedSet.has(mergeDest)) setMergeDest(selectedCourses[0]!.slug);
+    if (selectedCourses.length === 1) setRenameDraft(selectedCourses[0]?.name);
+    if (selectedCourses.length >= 2 && !selectedSet.has(mergeDest))
+      setMergeDest(selectedCourses[0]?.slug);
     if (selectedCourses.length < 2) setMergeDest("");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCourses.map((c) => c.slug).join("|")]);
+  }, [mergeDest, selectedCourses, selectedSet]);
 
   function toggle(slug: string) {
     setSelected((prev) => {
@@ -70,7 +75,8 @@ export function ClassesPage() {
 
   async function doRename() {
     if (selected.length !== 1) return;
-    const slug = selected[0]!;
+    const slug = selected[0];
+    if (!slug) return;
     if (!renameDraft.trim()) return;
     setActionBusy(true);
     setActionError(null);
@@ -122,7 +128,9 @@ export function ClassesPage() {
         </div>
       </div>
 
-      {error ? <div className="card card-error">Failed to load: {error}</div> : null}
+      {error ? (
+        <div className="card card-error">Failed to load: {error}</div>
+      ) : null}
 
       <div className="card">
         <div className="card-title">Courses</div>
@@ -130,11 +138,20 @@ export function ClassesPage() {
           <div className="card" style={{ marginTop: 12 }}>
             <div className="row row-between">
               <div className="mono">Selected: {selectedCourses.length}</div>
-              <button type="button" className="button" onClick={() => setSelected([])} disabled={actionBusy}>
+              <button
+                type="button"
+                className="button"
+                onClick={() => setSelected([])}
+                disabled={actionBusy}
+              >
                 Clear
               </button>
             </div>
-            {actionError ? <div className="muted" style={{ marginTop: 8 }}>{actionError}</div> : null}
+            {actionError ? (
+              <div className="muted" style={{ marginTop: 8 }}>
+                {actionError}
+              </div>
+            ) : null}
 
             {selectedCourses.length === 1 ? (
               <div style={{ marginTop: 10 }}>
@@ -146,7 +163,12 @@ export function ClassesPage() {
                     onChange={(e) => setRenameDraft(e.target.value)}
                     placeholder="New name"
                   />
-                  <button type="button" className="button primary" disabled={actionBusy || !renameDraft.trim()} onClick={() => void doRename()}>
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={actionBusy || !renameDraft.trim()}
+                    onClick={() => void doRename()}
+                  >
                     {actionBusy ? "Saving…" : "Rename"}
                   </button>
                 </div>
@@ -155,7 +177,9 @@ export function ClassesPage() {
 
             {selectedCourses.length >= 2 ? (
               <div style={{ marginTop: 12 }}>
-                <div className="muted">Merge / alias courses into one canonical course</div>
+                <div className="muted">
+                  Merge / alias courses into one canonical course
+                </div>
                 <div className="field" style={{ marginTop: 8 }}>
                   <label htmlFor="mergeDest">Destination</label>
                   <select
@@ -191,7 +215,8 @@ export function ClassesPage() {
                     {actionBusy ? "Merging…" : "Merge"}
                   </button>
                   <div className="muted">
-                    New ingests will route into the destination course to prevent future duplicates.
+                    New ingests will route into the destination course to
+                    prevent future duplicates.
                   </div>
                 </div>
               </div>
@@ -208,7 +233,11 @@ export function ClassesPage() {
             <div className="table-row table-head">
               <div>
                 <label className="row" style={{ gap: 8 }}>
-                  <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+                  <input
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleAll}
+                  />
                   <span className="muted">Select</span>
                 </label>
               </div>
@@ -224,7 +253,11 @@ export function ClassesPage() {
               return (
                 <div key={c.slug} className="table-row table-link">
                   <div>
-                    <input type="checkbox" checked={checked} onChange={() => toggle(c.slug)} />
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggle(c.slug)}
+                    />
                   </div>
                   <div className="mono">
                     <Link className="table-link" to={`/classes/${c.slug}`}>
@@ -232,7 +265,9 @@ export function ClassesPage() {
                     </Link>
                   </div>
                   <div className="muted mono">{c.slug}</div>
-                  <div className="muted mono">{Math.max(1, c.memberSlugs?.length ?? 1)}</div>
+                  <div className="muted mono">
+                    {Math.max(1, c.memberSlugs?.length ?? 1)}
+                  </div>
                   <div>{c.sessionsCount}</div>
                   <div>{c.artifactsCount}</div>
                   <div className="muted mono">{fmtIso(c.lastIngestedAt)}</div>

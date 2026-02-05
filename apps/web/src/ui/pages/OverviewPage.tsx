@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
-import { type ApiStatus, type JobStatus, getJobStats, getStatus } from "../lib/api";
+import {
+  type ApiStatus,
+  type JobStatus,
+  getJobStats,
+  getStatus,
+} from "../lib/api";
 import { formatLocalTimeOnYmd } from "../lib/time";
 
 export function OverviewPage() {
   const [status, setStatus] = useState<ApiStatus | null>(null);
-  const [jobStats, setJobStats] = useState<Record<JobStatus, number> | null>(null);
+  const [jobStats, setJobStats] = useState<Record<JobStatus, number> | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -84,13 +91,17 @@ export function OverviewPage() {
               <div className="kv">
                 <div className="k">Queued</div>
                 <div className="v">
-                  <span className="chip chip-neutral">{jobStats.queued ?? 0}</span>
+                  <span className="chip chip-neutral">
+                    {jobStats.queued ?? 0}
+                  </span>
                 </div>
               </div>
               <div className="kv">
                 <div className="k">Running</div>
                 <div className="v">
-                  <span className="chip chip-neutral">{jobStats.running ?? 0}</span>
+                  <span className="chip chip-neutral">
+                    {jobStats.running ?? 0}
+                  </span>
                 </div>
               </div>
               <div className="kv">
@@ -102,7 +113,9 @@ export function OverviewPage() {
               <div className="kv">
                 <div className="k">Blocked</div>
                 <div className="v">
-                  <span className="chip chip-warn">{jobStats.blocked ?? 0}</span>
+                  <span className="chip chip-warn">
+                    {jobStats.blocked ?? 0}
+                  </span>
                 </div>
               </div>
             </>

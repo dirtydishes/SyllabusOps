@@ -223,6 +223,13 @@
   font-size: 12px;
 }
 
+.field .field-label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--subtext0);
+  font-size: 12px;
+}
+
 .logs-card {
   padding: 0;
 }

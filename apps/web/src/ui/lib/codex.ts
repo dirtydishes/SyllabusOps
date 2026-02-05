@@ -2,7 +2,10 @@ import type { CodexStatus } from "./codex-types";
 
 export type { CodexStatus } from "./codex-types";
 
-async function http<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
+async function http<T>(
+  input: RequestInfo | URL,
+  init?: RequestInit
+): Promise<T> {
   const res = await fetch(input, init);
   if (!res.ok) {
     const text = await res.text();
@@ -15,7 +18,10 @@ export async function getCodexStatus(): Promise<CodexStatus> {
   return await http<CodexStatus>("/api/auth/codex/status");
 }
 
-export async function startCodexChatgptLogin(): Promise<{ ok: true; authUrl: string }> {
+export async function startCodexChatgptLogin(): Promise<{
+  ok: true;
+  authUrl: string;
+}> {
   return await http<{ ok: true; authUrl: string }>("/api/auth/codex/start", {
     method: "POST",
   });
@@ -24,4 +30,3 @@ export async function startCodexChatgptLogin(): Promise<{ ok: true; authUrl: str
 export async function codexLogout(): Promise<{ ok: true }> {
   return await http<{ ok: true }>("/api/auth/codex/logout", { method: "POST" });
 }
-

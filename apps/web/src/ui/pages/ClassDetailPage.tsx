@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   type ArtifactSummary,
@@ -10,13 +10,18 @@ import {
   getExtractedText,
   getTasks,
   markTaskDone,
-  summarizeSession,
   suggestTasks,
+  summarizeSession,
 } from "../lib/api";
 
-function toChip(kind: ArtifactSummary["kind"]): { className: string; label: string } {
-  if (kind === "transcript") return { className: "chip chip-neutral", label: "Transcript" };
-  if (kind === "slides") return { className: "chip chip-neutral", label: "Slides" };
+function toChip(kind: ArtifactSummary["kind"]): {
+  className: string;
+  label: string;
+} {
+  if (kind === "transcript")
+    return { className: "chip chip-neutral", label: "Transcript" };
+  if (kind === "slides")
+    return { className: "chip chip-neutral", label: "Slides" };
   return { className: "chip chip-warn", label: "Unknown" };
 }
 
@@ -52,9 +57,9 @@ export function ClassDetailPage() {
       .then((r) => {
         if (cancelled) return;
         setDetail(r);
-        if (!search.get("date") && r.sessions[0]?.date) {
+        if (!selectedDate && r.sessions[0]?.date) {
           setSearch((s) => {
-            s.set("date", r.sessions[0]!.date);
+            s.set("date", r.sessions[0]?.date);
             return s;
           });
         }
@@ -66,16 +71,19 @@ export function ClassDetailPage() {
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseSlug]);
+  }, [courseSlug, selectedDate, setSearch]);
 
   const session = useMemo(() => {
     if (!detail) return null;
     if (!selectedDate) return detail.sessions[0] ?? null;
-    return detail.sessions.find((s) => s.date === selectedDate) ?? (detail.sessions[0] ?? null);
+    return (
+      detail.sessions.find((s) => s.date === selectedDate) ??
+      detail.sessions[0] ??
+      null
+    );
   }, [detail, selectedDate]);
 
-  async function refreshTasks() {
+  const refreshTasks = useCallback(async () => {
     if (!courseSlug || !session?.date) return;
     setTasksError(null);
     setTasksBusy(true);
@@ -91,19 +99,22 @@ export function ClassDetailPage() {
     } finally {
       setTasksBusy(false);
     }
-  }
+  }, [courseSlug, session?.date]);
 
   useEffect(() => {
     void refreshTasks();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseSlug, session?.date]);
+  }, [refreshTasks]);
 
   async function openPreview(a: ArtifactSummary) {
     if (!a.cache.type || !a.cache.extractedTextAvailable) return;
     setPreviewBusy(true);
     setPreviewError(null);
     try {
-      const r = await getExtractedText({ cache: a.cache.type, sha: a.sha256, maxChars: 120_000 });
+      const r = await getExtractedText({
+        cache: a.cache.type,
+        sha: a.sha256,
+        maxChars: 120_000,
+      });
       setPreview({
         title: `${a.fileName} • extracted`,
         text: r.text,
@@ -136,7 +147,9 @@ export function ClassDetailPage() {
     setSummaryBusy(true);
     try {
       await summarizeSession({ courseSlug, sessionDate: session.date });
-      setSummaryMsg("Summary job queued. Open Summary to view (refresh after it completes).");
+      setSummaryMsg(
+        "Summary job queued. Open Summary to view (refresh after it completes)."
+      );
     } catch (e: unknown) {
       setSummaryError(String((e as Error)?.message ?? e));
     } finally {
@@ -144,7 +157,10 @@ export function ClassDetailPage() {
     }
   }
 
-  async function setTaskStatus(id: string, action: "approve" | "dismiss" | "done") {
+  async function setTaskStatus(
+    id: string,
+    action: "approve" | "dismiss" | "done"
+  ) {
     setTasksError(null);
     setTasksBusy(true);
     try {
@@ -191,7 +207,9 @@ export function ClassDetailPage() {
         </div>
       </div>
 
-      {error ? <div className="card card-error">Failed to load: {error}</div> : null}
+      {error ? (
+        <div className="card card-error">Failed to load: {error}</div>
+      ) : null}
 
       {!detail ? (
         <div className="card">
@@ -207,13 +225,19 @@ export function ClassDetailPage() {
               <div className="session-list">
                 {detail.sessions.map((s) => {
                   const active = s.date === (session?.date ?? "");
-                  const transcripts = s.artifacts.filter((a) => a.kind === "transcript").length;
-                  const slides = s.artifacts.filter((a) => a.kind === "slides").length;
+                  const transcripts = s.artifacts.filter(
+                    (a) => a.kind === "transcript"
+                  ).length;
+                  const slides = s.artifacts.filter(
+                    (a) => a.kind === "slides"
+                  ).length;
                   return (
                     <button
                       type="button"
                       key={s.date}
-                      className={active ? "session-item active" : "session-item"}
+                      className={
+                        active ? "session-item active" : "session-item"
+                      }
                       onClick={() => {
                         setSearch((q) => {
                           q.set("date", s.date);
@@ -221,10 +245,15 @@ export function ClassDetailPage() {
                         });
                       }}
                     >
-                      <div className="row row-between" style={{ width: "100%" }}>
+                      <div
+                        className="row row-between"
+                        style={{ width: "100%" }}
+                      >
                         <div className="mono">{s.date}</div>
                         <div className="row">
-                          <span className="chip chip-neutral">T {transcripts}</span>
+                          <span className="chip chip-neutral">
+                            T {transcripts}
+                          </span>
                           <span className="chip chip-neutral">S {slides}</span>
                         </div>
                       </div>
@@ -275,7 +304,9 @@ export function ClassDetailPage() {
               ) : null}
             </div>
 
-            {summaryError ? <div className="muted">Summary error: {summaryError}</div> : null}
+            {summaryError ? (
+              <div className="muted">Summary error: {summaryError}</div>
+            ) : null}
             {summaryMsg ? <div className="muted">{summaryMsg}</div> : null}
 
             {!session ? (
@@ -323,7 +354,11 @@ export function ClassDetailPage() {
                         <button
                           type="button"
                           className="button"
-                          disabled={!a.cache.type || !a.cache.extractedTextAvailable || previewBusy}
+                          disabled={
+                            !a.cache.type ||
+                            !a.cache.extractedTextAvailable ||
+                            previewBusy
+                          }
                           onClick={() => void openPreview(a)}
                         >
                           Preview
@@ -335,7 +370,9 @@ export function ClassDetailPage() {
               </div>
             )}
 
-            {previewError ? <div className="muted">Preview error: {previewError}</div> : null}
+            {previewError ? (
+              <div className="muted">Preview error: {previewError}</div>
+            ) : null}
 
             <div className="card" style={{ marginTop: 12 }}>
               <div className="row row-between">
@@ -351,7 +388,9 @@ export function ClassDetailPage() {
                   </button>
                 </div>
               </div>
-              {tasksError ? <div className="muted">Tasks error: {tasksError}</div> : null}
+              {tasksError ? (
+                <div className="muted">Tasks error: {tasksError}</div>
+              ) : null}
               {!tasks ? (
                 <div className="muted">Loading…</div>
               ) : tasks.length === 0 ? (
@@ -359,25 +398,34 @@ export function ClassDetailPage() {
               ) : (
                 <>
                   <div className="muted" style={{ marginTop: 4 }}>
-                    Approved tasks become your TODO list. Suggested tasks are waiting for approval.
+                    Approved tasks become your TODO list. Suggested tasks are
+                    waiting for approval.
                   </div>
 
                   {tasksByStatus.approved.length > 0 ? (
                     <div style={{ marginTop: 12 }}>
                       <div className="row row-between">
                         <div className="mono">TODO (Approved)</div>
-                        <span className="chip chip-ok">{tasksByStatus.approved.length}</span>
+                        <span className="chip chip-ok">
+                          {tasksByStatus.approved.length}
+                        </span>
                       </div>
                       <div className="task-list" style={{ marginTop: 8 }}>
                         {tasksByStatus.approved.map((t) => (
                           <div key={t.id} className="task-item">
-                            <div className="row row-between" style={{ width: "100%" }}>
+                            <div
+                              className="row row-between"
+                              style={{ width: "100%" }}
+                            >
                               <div>
                                 <div className="mono">{t.title}</div>
                                 <div className="muted" style={{ marginTop: 4 }}>
                                   {t.description}
                                 </div>
-                                <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
+                                <div
+                                  className="muted mono"
+                                  style={{ marginTop: 6, fontSize: 12 }}
+                                >
                                   {t.due ? `due: ${t.due}` : "no due"} • conf:{" "}
                                   {t.confidence.toFixed(2)}
                                 </div>
@@ -387,7 +435,9 @@ export function ClassDetailPage() {
                                   type="button"
                                   className="button primary"
                                   disabled={tasksBusy}
-                                  onClick={() => void setTaskStatus(t.id, "done")}
+                                  onClick={() =>
+                                    void setTaskStatus(t.id, "done")
+                                  }
                                 >
                                   Done
                                 </button>
@@ -395,7 +445,9 @@ export function ClassDetailPage() {
                                   type="button"
                                   className="button"
                                   disabled={tasksBusy}
-                                  onClick={() => void setTaskStatus(t.id, "dismiss")}
+                                  onClick={() =>
+                                    void setTaskStatus(t.id, "dismiss")
+                                  }
                                 >
                                   Dismiss
                                 </button>
@@ -411,18 +463,26 @@ export function ClassDetailPage() {
                     <div style={{ marginTop: 14 }}>
                       <div className="row row-between">
                         <div className="mono">Suggested</div>
-                        <span className="chip chip-neutral">{tasksByStatus.suggested.length}</span>
+                        <span className="chip chip-neutral">
+                          {tasksByStatus.suggested.length}
+                        </span>
                       </div>
                       <div className="task-list" style={{ marginTop: 8 }}>
                         {tasksByStatus.suggested.map((t) => (
                           <div key={t.id} className="task-item">
-                            <div className="row row-between" style={{ width: "100%" }}>
+                            <div
+                              className="row row-between"
+                              style={{ width: "100%" }}
+                            >
                               <div>
                                 <div className="mono">{t.title}</div>
                                 <div className="muted" style={{ marginTop: 4 }}>
                                   {t.description}
                                 </div>
-                                <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
+                                <div
+                                  className="muted mono"
+                                  style={{ marginTop: 6, fontSize: 12 }}
+                                >
                                   {t.due ? `due: ${t.due}` : "no due"} • conf:{" "}
                                   {t.confidence.toFixed(2)}
                                 </div>
@@ -432,7 +492,9 @@ export function ClassDetailPage() {
                                   type="button"
                                   className="button primary"
                                   disabled={tasksBusy}
-                                  onClick={() => void setTaskStatus(t.id, "approve")}
+                                  onClick={() =>
+                                    void setTaskStatus(t.id, "approve")
+                                  }
                                 >
                                   Approve
                                 </button>
@@ -440,7 +502,9 @@ export function ClassDetailPage() {
                                   type="button"
                                   className="button"
                                   disabled={tasksBusy}
-                                  onClick={() => void setTaskStatus(t.id, "done")}
+                                  onClick={() =>
+                                    void setTaskStatus(t.id, "done")
+                                  }
                                 >
                                   Done
                                 </button>
@@ -448,7 +512,9 @@ export function ClassDetailPage() {
                                   type="button"
                                   className="button"
                                   disabled={tasksBusy}
-                                  onClick={() => void setTaskStatus(t.id, "dismiss")}
+                                  onClick={() =>
+                                    void setTaskStatus(t.id, "dismiss")
+                                  }
                                 >
                                   Dismiss
                                 </button>
@@ -460,9 +526,11 @@ export function ClassDetailPage() {
                     </div>
                   ) : null}
 
-                  {tasksByStatus.approved.length === 0 && tasksByStatus.suggested.length === 0 ? (
+                  {tasksByStatus.approved.length === 0 &&
+                  tasksByStatus.suggested.length === 0 ? (
                     <div className="muted" style={{ marginTop: 10 }}>
-                      No suggested or approved tasks. (Done/dismissed tasks are hidden here.)
+                      No suggested or approved tasks. (Done/dismissed tasks are
+                      hidden here.)
                     </div>
                   ) : null}
                 </>
@@ -473,11 +541,30 @@ export function ClassDetailPage() {
       )}
 
       {preview ? (
-        <div className="modal-backdrop" onClick={() => setPreview(null)} role="presentation">
-          <div className="modal" onClick={(e) => e.stopPropagation()} role="presentation">
+        <div
+          className="modal-backdrop"
+          onClick={() => setPreview(null)}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") setPreview(null);
+          }}
+          role="presentation"
+        >
+          <div
+            className="modal"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setPreview(null);
+            }}
+            role="presentation"
+            tabIndex={-1}
+          >
             <div className="row row-between">
               <div className="mono">{preview.title}</div>
-              <button type="button" className="button" onClick={() => setPreview(null)}>
+              <button
+                type="button"
+                className="button"
+                onClick={() => setPreview(null)}
+              >
                 Close
               </button>
             </div>

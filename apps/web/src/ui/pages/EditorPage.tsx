@@ -285,6 +285,16 @@ export function EditorPage() {
               ) : null}
               {mode !== "edit" ? (
                 <div className="pane preview">
+                  {selectedIsSummary && mode === "preview" ? (
+                    <button
+                      type="button"
+                      className="button editor-edit-fab"
+                      onClick={() => setMode("edit")}
+                      title="Edit markdown"
+                    >
+                      Edit
+                    </button>
+                  ) : null}
                   <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {content}
                   </ReactMarkdown>

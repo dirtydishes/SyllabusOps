@@ -6,6 +6,7 @@
       "**/dist/**",
       ".beads/**",
       ".syllabusops/**",
+      ".syllabusops.*",
       "bun.lock",
       "bun.lockb"
     ]

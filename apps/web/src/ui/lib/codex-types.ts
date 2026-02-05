@@ -6,4 +6,3 @@ export type CodexStatus = {
   accountLabel: string | null;
   lastError: string | null;
 };
-
