@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
 import path from "node:path";
 import type { Logger } from "../logger";
 import { detectSessionDate } from "./date";
@@ -35,6 +36,35 @@ async function exists(p: string): Promise<boolean> {
 function withDuplicateSuffix(baseName: string, n: number): string {
   if (n <= 1) return baseName;
   return `${baseName} (${n})`;
+}
+
+async function findExistingIngestBySha(opts: {
+  rawDir: string;
+  sha256: string;
+}): Promise<{ canonicalPath: string; metaPath: string } | null> {
+  let entries: string[] = [];
+  try {
+    entries = await fs.readdir(opts.rawDir);
+  } catch {
+    return null;
+  }
+
+  const metas = entries.filter((e) => e.endsWith(".meta.json"));
+  for (const metaFile of metas) {
+    const metaPath = path.join(opts.rawDir, metaFile);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(await fs.readFile(metaPath, "utf8"));
+    } catch {
+      continue;
+    }
+    const sha = (parsed as { sha256?: unknown })?.sha256;
+    if (typeof sha === "string" && sha === opts.sha256) {
+      const canonicalPath = metaPath.replace(/\.meta\.json$/, "");
+      return { canonicalPath, metaPath };
+    }
+  }
+  return null;
 }
 
 export async function ingestFile(opts: {
@@ -74,19 +104,55 @@ export async function ingestFile(opts: {
 
   await fs.mkdir(rawDir, { recursive: true });
 
+  // Compute sha before copy so we can de-dupe across restarts.
+  const sha256 = await sha256FileHex(opts.sourcePath);
+  const existing = await findExistingIngestBySha({ rawDir, sha256 });
+  if (existing) {
+    opts.logger.info("ingest.deduped", {
+      sourcePath: opts.sourcePath,
+      copiedTo: existing.canonicalPath,
+      sha256,
+      kind,
+      sessionDate,
+      courseSlug,
+    });
+    return {
+      ok: true,
+      copiedTo: existing.canonicalPath,
+      metaPath: existing.metaPath,
+      sha256,
+      sessionDate,
+      courseSlug,
+      kind,
+    };
+  }
+
   let copiedTo: string | null = null;
-  for (let n = 1; n <= 25; n++) {
+  for (let n = 1; n <= 999; n++) {
     const name = `${withDuplicateSuffix(canonicalBase, n)}${ext}`;
     const candidate = path.join(rawDir, name);
     if (await exists(candidate)) continue;
-    await fs.copyFile(opts.sourcePath, candidate);
-    copiedTo = candidate;
-    break;
+    try {
+      await fs.copyFile(opts.sourcePath, candidate, fsConstants.COPYFILE_EXCL);
+      copiedTo = candidate;
+      break;
+    } catch {
+      // race, try next suffix
+      continue;
+    }
   }
-  if (!copiedTo)
-    return { ok: false, error: "Could not find a free canonical filename." };
+  if (!copiedTo) {
+    const suffix = sha256.slice(0, 10);
+    const name = `${canonicalBase} ${suffix}${ext}`;
+    const candidate = path.join(rawDir, name);
+    try {
+      await fs.copyFile(opts.sourcePath, candidate, fsConstants.COPYFILE_EXCL);
+      copiedTo = candidate;
+    } catch {
+      return { ok: false, error: "Could not find a free canonical filename." };
+    }
+  }
 
-  const sha256 = await sha256FileHex(copiedTo);
   const meta: ArtifactMetaV1 = {
     version: 1,
     ingestedAt: new Date().toISOString(),
