@@ -29,6 +29,7 @@ export type Settings = {
 export type CourseSummary = {
   slug: string;
   name: string;
+  memberSlugs: string[];
   sessionsCount: number;
   artifactsCount: number;
   lastIngestedAt: string | null;
@@ -54,7 +55,7 @@ export type SessionSummary = {
 };
 
 export type CourseDetail = {
-  course: { slug: string; name: string };
+  course: { slug: string; name: string; memberSlugs: string[] };
   sessions: SessionSummary[];
 };
 
@@ -127,6 +128,26 @@ export async function getCourses(): Promise<{ courses: CourseSummary[] }> {
 
 export async function getCourseDetail(courseSlug: string): Promise<CourseDetail> {
   return await http<CourseDetail>(`/api/courses/${encodeURIComponent(courseSlug)}`);
+}
+
+export async function renameCourse(courseSlug: string, name: string): Promise<{ ok: true }> {
+  return await http<{ ok: true }>(`/api/courses/${encodeURIComponent(courseSlug)}/rename`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export async function mergeCourses(input: {
+  destinationSlug: string;
+  sourceSlugs: string[];
+  name?: string;
+}): Promise<{ ok: true; destinationSlug: string }> {
+  return await http<{ ok: true; destinationSlug: string }>("/api/courses/merge", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
 }
 
 export async function getExtractedText(input: {
