@@ -8,7 +8,8 @@ export type JobQueue = {
     payload: Record<string, unknown>;
     priority: number;
   }) => JobRecord;
-  list: (opts?: { limit?: number; status?: JobStatus }) => JobRecord[];
+  list: (opts?: { limit?: number; status?: JobStatus; jobType?: JobType }) => JobRecord[];
+  stats: () => { counts: Record<JobStatus, number> };
   claimNext: () => JobRecord | null;
   succeed: (id: string) => void;
   fail: (id: string, error: string) => void;
@@ -37,7 +38,14 @@ export function createJobQueue(db: Db): JobQueue {
 
       return db.query("SELECT * FROM jobs WHERE id = ?").get(id) as JobRecord;
     },
-    list: ({ limit = 100, status } = {}) => {
+    list: ({ limit = 100, status, jobType } = {}) => {
+      if (status && jobType) {
+        return db
+          .query(
+            "SELECT * FROM jobs WHERE status = ? AND job_type = ? ORDER BY priority ASC, next_run_at ASC LIMIT ?"
+          )
+          .all(status, jobType, limit) as JobRecord[];
+      }
       if (status) {
         return db
           .query(
@@ -45,9 +53,32 @@ export function createJobQueue(db: Db): JobQueue {
           )
           .all(status, limit) as JobRecord[];
       }
+      if (jobType) {
+        return db
+          .query(
+            "SELECT * FROM jobs WHERE job_type = ? ORDER BY updated_at DESC LIMIT ?"
+          )
+          .all(jobType, limit) as JobRecord[];
+      }
       return db
         .query("SELECT * FROM jobs ORDER BY updated_at DESC LIMIT ?")
         .all(limit) as JobRecord[];
+    },
+    stats: () => {
+      const rows = db
+        .query("SELECT status, COUNT(1) as n FROM jobs GROUP BY status")
+        .all() as Array<{ status: JobStatus; n: number }>;
+      const counts: Record<JobStatus, number> = {
+        queued: 0,
+        running: 0,
+        succeeded: 0,
+        failed: 0,
+        blocked: 0,
+      };
+      for (const r of rows) {
+        if (r.status in counts) counts[r.status] = Number(r.n ?? 0);
+      }
+      return { counts };
     },
     claimNext: () => {
       const now = new Date().toISOString();

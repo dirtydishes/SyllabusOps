@@ -29,7 +29,7 @@ import {
 import { ingestFile } from "./ingest/ingest-file";
 import { createJobQueue } from "./jobs/queue";
 import { createJobRunner } from "./jobs/runner";
-import { EnqueueJobRequestSchema, JobStatusSchema } from "./jobs/schemas";
+import { EnqueueJobRequestSchema, JobStatusSchema, JobTypeSchema } from "./jobs/schemas";
 import { scanCourseDetail, scanCourses, scanSession } from "./library/library";
 import { openAiJsonSchema } from "./llm/openai-responses";
 import { Logger } from "./logger";
@@ -604,15 +604,18 @@ const app = new Elysia()
     const parsed = z
       .object({
         status: JobStatusSchema.optional(),
+        type: JobTypeSchema.optional(),
         limit: z.coerce.number().int().optional(),
       })
       .parse(query);
     const list = queue.list({
       limit: parsed.limit ?? 200,
       status: parsed.status,
+      jobType: parsed.type,
     });
     return { jobs: list };
   })
+  .get("/api/jobs/stats", () => queue.stats())
   .post("/api/jobs/enqueue", ({ body }) => {
     const parsed = EnqueueJobRequestSchema.parse(body);
     const job = queue.enqueue({
