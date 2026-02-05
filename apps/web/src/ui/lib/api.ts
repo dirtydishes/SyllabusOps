@@ -10,6 +10,8 @@ export type Settings = {
   unifiedDir: string;
   watchRoots: string[];
   ingestEnabled: boolean;
+  openaiApiBaseUrl: string;
+  openaiModel: string;
   openaiOAuth?: {
     clientId: string;
     authorizeUrl: string;
@@ -49,6 +51,22 @@ export type SessionSummary = {
 export type CourseDetail = {
   course: { slug: string; name: string };
   sessions: SessionSummary[];
+};
+
+export type TaskStatus = "suggested" | "approved" | "done" | "dismissed";
+
+export type TaskRow = {
+  id: string;
+  course_slug: string;
+  session_date: string | null;
+  artifact_sha: string | null;
+  title: string;
+  description: string;
+  due: string | null;
+  confidence: number;
+  status: TaskStatus;
+  created_at: string;
+  updated_at: string;
 };
 
 export type FsEntry = { name: string; type: "file" | "dir" };
@@ -92,6 +110,49 @@ export async function getExtractedText(input: {
   url.searchParams.set("sha", input.sha);
   if (input.maxChars) url.searchParams.set("maxChars", String(input.maxChars));
   return await http<{ ok: true; truncated: boolean; text: string }>(url);
+}
+
+export async function getTasks(input: {
+  courseSlug: string;
+  sessionDate?: string;
+  status?: TaskStatus;
+  limit?: number;
+}): Promise<{ tasks: TaskRow[] }> {
+  const url = new URL("/api/tasks", window.location.origin);
+  url.searchParams.set("courseSlug", input.courseSlug);
+  if (input.sessionDate) url.searchParams.set("sessionDate", input.sessionDate);
+  if (input.status) url.searchParams.set("status", input.status);
+  if (input.limit) url.searchParams.set("limit", String(input.limit));
+  return await http<{ tasks: TaskRow[] }>(url);
+}
+
+export async function suggestTasks(input: {
+  courseSlug: string;
+  sessionDate: string;
+}): Promise<{ job: unknown }> {
+  return await http<{ job: unknown }>("/api/tasks/suggest", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function approveTask(id: string): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>(`/api/tasks/${encodeURIComponent(id)}/approve`, {
+    method: "POST",
+  });
+}
+
+export async function dismissTask(id: string): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>(`/api/tasks/${encodeURIComponent(id)}/dismiss`, {
+    method: "POST",
+  });
+}
+
+export async function markTaskDone(id: string): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>(`/api/tasks/${encodeURIComponent(id)}/done`, {
+    method: "POST",
+  });
 }
 
 export async function getSettings(): Promise<Settings> {

@@ -189,6 +189,32 @@ export function SettingsPage() {
           OAuth is preferred; API key fallback is stored in macOS Keychain.
         </div>
 
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="openaiApiBaseUrl">API base URL</label>
+          <input
+            id="openaiApiBaseUrl"
+            className="input mono"
+            value={value?.openaiApiBaseUrl ?? ""}
+            onChange={(e) =>
+              setValue((v) => (v ? { ...v, openaiApiBaseUrl: e.target.value } : v))
+            }
+            placeholder="https://api.openai.com/v1"
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="openaiModel">Model</label>
+          <input
+            id="openaiModel"
+            className="input mono"
+            value={value?.openaiModel ?? ""}
+            onChange={(e) =>
+              setValue((v) => (v ? { ...v, openaiModel: e.target.value } : v))
+            }
+            placeholder="gpt-4o-mini"
+          />
+        </div>
+
         <div className="kv" style={{ marginTop: 10 }}>
           <div className="k">Mode</div>
           <div className="v mono">{openAiStatus?.mode ?? "…"}</div>

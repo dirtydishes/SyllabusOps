@@ -3,8 +3,14 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   type ArtifactSummary,
   type CourseDetail,
+  type TaskRow,
+  approveTask,
+  dismissTask,
   getCourseDetail,
   getExtractedText,
+  getTasks,
+  markTaskDone,
+  suggestTasks,
 } from "../lib/api";
 
 function toChip(kind: ArtifactSummary["kind"]): { className: string; label: string } {
@@ -19,6 +25,10 @@ export function ClassDetailPage() {
 
   const [detail, setDetail] = useState<CourseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const [tasks, setTasks] = useState<TaskRow[] | null>(null);
+  const [tasksBusy, setTasksBusy] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
 
   const [preview, setPreview] = useState<{
     title: string;
@@ -61,6 +71,30 @@ export function ClassDetailPage() {
     return detail.sessions.find((s) => s.date === selectedDate) ?? (detail.sessions[0] ?? null);
   }, [detail, selectedDate]);
 
+  async function refreshTasks() {
+    if (!courseSlug || !session?.date) return;
+    setTasksError(null);
+    setTasksBusy(true);
+    try {
+      const r = await getTasks({
+        courseSlug,
+        sessionDate: session.date,
+        status: "suggested",
+        limit: 200,
+      });
+      setTasks(r.tasks);
+    } catch (e: unknown) {
+      setTasksError(String((e as Error)?.message ?? e));
+    } finally {
+      setTasksBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    void refreshTasks();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courseSlug, session?.date]);
+
   async function openPreview(a: ArtifactSummary) {
     if (!a.cache.type || !a.cache.extractedTextAvailable) return;
     setPreviewBusy(true);
@@ -76,6 +110,34 @@ export function ClassDetailPage() {
       setPreviewError(String((e as Error)?.message ?? e));
     } finally {
       setPreviewBusy(false);
+    }
+  }
+
+  async function onSuggestTasks() {
+    if (!courseSlug || !session?.date) return;
+    setTasksError(null);
+    setTasksBusy(true);
+    try {
+      await suggestTasks({ courseSlug, sessionDate: session.date });
+    } catch (e: unknown) {
+      setTasksError(String((e as Error)?.message ?? e));
+    } finally {
+      setTasksBusy(false);
+    }
+  }
+
+  async function setTaskStatus(id: string, action: "approve" | "dismiss" | "done") {
+    setTasksError(null);
+    setTasksBusy(true);
+    try {
+      if (action === "approve") await approveTask(id);
+      if (action === "dismiss") await dismissTask(id);
+      if (action === "done") await markTaskDone(id);
+      await refreshTasks();
+    } catch (e: unknown) {
+      setTasksError(String((e as Error)?.message ?? e));
+    } finally {
+      setTasksBusy(false);
     }
   }
 
@@ -153,6 +215,14 @@ export function ClassDetailPage() {
               </div>
               {session ? (
                 <div className="row">
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={tasksBusy || !detail}
+                    onClick={() => void onSuggestTasks()}
+                  >
+                    Suggest Tasks
+                  </button>
                   <Link
                     className="button"
                     to={`/editor?path=${encodeURIComponent(session.generated.sessionNotesPath)}`}
@@ -227,6 +297,72 @@ export function ClassDetailPage() {
             )}
 
             {previewError ? <div className="muted">Preview error: {previewError}</div> : null}
+
+            <div className="card" style={{ marginTop: 12 }}>
+              <div className="row row-between">
+                <div className="card-title">Suggested Tasks</div>
+                <div className="row">
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={tasksBusy}
+                    onClick={() => void refreshTasks()}
+                  >
+                    Refresh
+                  </button>
+                </div>
+              </div>
+              {tasksError ? <div className="muted">Tasks error: {tasksError}</div> : null}
+              {!tasks ? (
+                <div className="muted">Loading…</div>
+              ) : tasks.length === 0 ? (
+                <div className="muted">No suggested tasks for this session yet.</div>
+              ) : (
+                <div className="task-list">
+                  {tasks.map((t) => (
+                    <div key={t.id} className="task-item">
+                      <div className="row row-between" style={{ width: "100%" }}>
+                        <div>
+                          <div className="mono">{t.title}</div>
+                          <div className="muted" style={{ marginTop: 4 }}>
+                            {t.description}
+                          </div>
+                          <div className="muted mono" style={{ marginTop: 6, fontSize: 12 }}>
+                            {t.due ? `due: ${t.due}` : "no due"} • conf: {t.confidence.toFixed(2)}
+                          </div>
+                        </div>
+                        <div className="row">
+                          <button
+                            type="button"
+                            className="button primary"
+                            disabled={tasksBusy}
+                            onClick={() => void setTaskStatus(t.id, "approve")}
+                          >
+                            Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={tasksBusy}
+                            onClick={() => void setTaskStatus(t.id, "done")}
+                          >
+                            Done
+                          </button>
+                          <button
+                            type="button"
+                            className="button"
+                            disabled={tasksBusy}
+                            onClick={() => void setTaskStatus(t.id, "dismiss")}
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}

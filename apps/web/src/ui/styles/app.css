@@ -361,6 +361,19 @@
   line-height: 1.5;
 }
 
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-item {
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(49, 50, 68, 0.2);
+  border-radius: 10px;
+  padding: 10px 10px;
+}
+
 .breadcrumbs {
   font-size: 13px;
 }
