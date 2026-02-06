@@ -15,6 +15,8 @@ function normalizeWhitespace(s: string): string {
     .replaceAll("\r\n", "\n")
     .replaceAll("\r", "\n")
     .replaceAll(/[ \t]+/g, " ")
+    .replaceAll(/[ \t]+\n/g, "\n")
+    .replaceAll(/\n[ \t]+/g, "\n")
     .replaceAll(/\n{3,}/g, "\n\n")
     .trim();
   return `${normalized}\n`;

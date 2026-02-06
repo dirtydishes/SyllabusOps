@@ -6,6 +6,7 @@
     "dev": "concurrently -n server,web -c magenta,cyan \"bun run dev:server\" \"bun run dev:web\"",
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
+    "test": "bun test",
     "check": "biome check .",
     "format": "biome format --write ."
   },
