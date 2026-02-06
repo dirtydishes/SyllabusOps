@@ -1,4 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
+import { CalendarPage } from "./pages/CalendarPage";
 import { ClassDetailPage } from "./pages/ClassDetailPage";
 import { ClassesPage } from "./pages/ClassesPage";
 import { EditorPage } from "./pages/EditorPage";
@@ -41,6 +42,14 @@ function Shell(props: { children: React.ReactNode }) {
             }
           >
             Tasks
+          </NavLink>
+          <NavLink
+            to="/calendar"
+            className={({ isActive }) =>
+              isActive ? "nav-link active" : "nav-link"
+            }
+          >
+            Calendar
           </NavLink>
           <NavLink
             to="/queue"
@@ -92,6 +101,7 @@ export function App() {
         <Route path="/classes" element={<ClassesPage />} />
         <Route path="/classes/:courseSlug" element={<ClassDetailPage />} />
         <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/calendar" element={<CalendarPage />} />
         <Route path="/queue" element={<QueuePage />} />
         <Route path="/editor" element={<EditorPage />} />
         <Route path="/logs" element={<LogsPage />} />

@@ -62,6 +62,54 @@ function migrate(db: Db) {
       CREATE INDEX IF NOT EXISTS idx_tasks_session ON tasks(course_slug, session_date, created_at);
     `);
   });
+
+  applyMigration(db, "2026-02-06_calendar_v1", () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS calendar_schedules (
+        id TEXT PRIMARY KEY,
+        course_slug TEXT NOT NULL,
+        day_of_week INTEGER NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        timezone TEXT NOT NULL,
+        zoom_join_url TEXT,
+        zoom_meeting_id TEXT,
+        zoom_passcode TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_schedules_unique
+        ON calendar_schedules(course_slug, day_of_week, start_time, end_time, timezone);
+      CREATE INDEX IF NOT EXISTS idx_calendar_schedules_course
+        ON calendar_schedules(course_slug, day_of_week, start_time);
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS calendar_events (
+        id TEXT PRIMARY KEY,
+        course_slug TEXT NOT NULL,
+        uid TEXT NOT NULL,
+        title TEXT NOT NULL,
+        starts_at TEXT NOT NULL,
+        ends_at TEXT NOT NULL,
+        timezone TEXT NOT NULL,
+        location TEXT,
+        description TEXT,
+        zoom_join_url TEXT,
+        zoom_meeting_id TEXT,
+        zoom_passcode TEXT,
+        source TEXT NOT NULL DEFAULT 'ics',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_calendar_events_unique
+        ON calendar_events(course_slug, uid);
+      CREATE INDEX IF NOT EXISTS idx_calendar_events_course_starts
+        ON calendar_events(course_slug, starts_at);
+    `);
+  });
 }
 
 function applyMigration(db: Db, id: string, fn: () => void) {

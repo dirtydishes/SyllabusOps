@@ -78,6 +78,38 @@ export type TaskRow = {
   updated_at: string;
 };
 
+export type CalendarScheduleRow = {
+  id: string;
+  course_slug: string;
+  day_of_week: number;
+  start_time: string;
+  end_time: string;
+  timezone: string;
+  zoom_join_url: string | null;
+  zoom_meeting_id: string | null;
+  zoom_passcode: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type CalendarEventRow = {
+  id: string;
+  course_slug: string;
+  uid: string;
+  title: string;
+  starts_at: string;
+  ends_at: string;
+  timezone: string;
+  location: string | null;
+  description: string | null;
+  zoom_join_url: string | null;
+  zoom_meeting_id: string | null;
+  zoom_passcode: string | null;
+  source: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type JobStatus =
   | "queued"
   | "running"
@@ -195,6 +227,74 @@ export async function getTasks(input: {
   if (input.status) url.searchParams.set("status", input.status);
   if (input.limit) url.searchParams.set("limit", String(input.limit));
   return await http<{ tasks: TaskRow[] }>(url);
+}
+
+export async function getCalendar(input?: {
+  courseSlug?: string;
+  limit?: number;
+}): Promise<{ schedules: CalendarScheduleRow[]; events: CalendarEventRow[] }> {
+  const url = new URL("/api/calendar", window.location.origin);
+  if (input?.courseSlug) url.searchParams.set("courseSlug", input.courseSlug);
+  if (input?.limit) url.searchParams.set("limit", String(input.limit));
+  return await http<{
+    schedules: CalendarScheduleRow[];
+    events: CalendarEventRow[];
+  }>(url);
+}
+
+export async function saveCalendarSchedule(input: {
+  courseSlug: string;
+  dayOfWeek: number;
+  startTime: string;
+  endTime: string;
+  timezone: string;
+  zoomJoinUrl?: string;
+  zoomMeetingId?: string;
+  zoomPasscode?: string;
+}): Promise<{ ok: true; schedule: CalendarScheduleRow }> {
+  return await http<{ ok: true; schedule: CalendarScheduleRow }>(
+    "/api/calendar",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "upsert_schedule",
+        ...input,
+      }),
+    }
+  );
+}
+
+export async function deleteCalendarSchedule(
+  id: string
+): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>("/api/calendar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "delete_schedule",
+      id,
+    }),
+  });
+}
+
+export async function importCalendarIcs(input: {
+  courseSlug: string;
+  icsText: string;
+}): Promise<{ ok: true; inserted: number; updated: number; total: number }> {
+  return await http<{
+    ok: true;
+    inserted: number;
+    updated: number;
+    total: number;
+  }>("/api/calendar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "import_ics",
+      ...input,
+    }),
+  });
 }
 
 export async function suggestTasks(input: {

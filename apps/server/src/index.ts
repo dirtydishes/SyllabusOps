@@ -14,6 +14,8 @@ import {
   OpenAiOAuthStatusSchema,
   createOpenAiAuth,
 } from "./auth/openai";
+import { parseIcsEvents } from "./calendar/ics";
+import { createCalendarStore } from "./calendar/store";
 import { loadConfig } from "./config";
 import {
   scanCourseDetailGrouped,
@@ -896,6 +898,97 @@ const app = new Elysia()
     await codex.logout();
     return { ok: true };
   })
+  .get("/api/calendar", async ({ query }) => {
+    const q = z
+      .object({
+        courseSlug: z.string().min(1).optional(),
+        limit: z.coerce.number().int().positive().max(1000).optional(),
+      })
+      .parse(query);
+
+    const courseSlug = q.courseSlug
+      ? await courseRegistry.resolveCanonical(q.courseSlug)
+      : undefined;
+    const calendarStore = createCalendarStore(db);
+    return calendarStore.list({
+      courseSlug,
+      limit: q.limit ?? 300,
+    });
+  })
+  .post("/api/calendar", async ({ body }) => {
+    const b = z
+      .discriminatedUnion("action", [
+        z.object({
+          action: z.literal("upsert_schedule"),
+          courseSlug: z.string().min(1),
+          dayOfWeek: z.number().int().min(0).max(6),
+          startTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+          endTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/),
+          timezone: z.string().min(1),
+          zoomJoinUrl: z.string().optional(),
+          zoomMeetingId: z.string().optional(),
+          zoomPasscode: z.string().optional(),
+        }),
+        z.object({
+          action: z.literal("delete_schedule"),
+          id: z.string().min(1),
+        }),
+        z.object({
+          action: z.literal("import_ics"),
+          courseSlug: z.string().min(1),
+          icsText: z.string().min(1),
+        }),
+      ])
+      .parse(body);
+
+    const calendarStore = createCalendarStore(db);
+    if (b.action === "upsert_schedule") {
+      const canonical = await courseRegistry.resolveCanonical(b.courseSlug);
+      const schedule = calendarStore.upsertSchedule({
+        courseSlug: canonical,
+        dayOfWeek: b.dayOfWeek,
+        startTime: b.startTime,
+        endTime: b.endTime,
+        timezone: b.timezone,
+        zoomJoinUrl: b.zoomJoinUrl,
+        zoomMeetingId: b.zoomMeetingId,
+        zoomPasscode: b.zoomPasscode,
+      });
+      logger.info("calendar.schedule.upsert", {
+        courseSlug: canonical,
+        dayOfWeek: b.dayOfWeek,
+        startTime: b.startTime,
+        endTime: b.endTime,
+      });
+      return { ok: true as const, schedule };
+    }
+
+    if (b.action === "delete_schedule") {
+      const result = calendarStore.deleteSchedule(b.id);
+      logger.info("calendar.schedule.delete", {
+        id: b.id,
+        changed: result.changed,
+      });
+      return result;
+    }
+
+    const canonical = await courseRegistry.resolveCanonical(b.courseSlug);
+    const parsedEvents = parseIcsEvents(b.icsText);
+    const result = calendarStore.upsertEvents({
+      courseSlug: canonical,
+      events: parsedEvents.map((ev) => ({
+        ...ev,
+        source: "ics",
+      })),
+    });
+    logger.info("calendar.ics.import", {
+      courseSlug: canonical,
+      inserted: result.inserted,
+      updated: result.updated,
+      total: result.total,
+    });
+    return { ok: true as const, ...result };
+  })
   .get("/api/tasks", async ({ query }) => {
     const q = z
       .object({
@@ -1043,6 +1136,18 @@ const app = new Elysia()
       db.query(
         `UPDATE tasks SET course_slug = ? WHERE course_slug IN (${placeholders})`
       ).run(destination, ...sources);
+      db.query(
+        `UPDATE OR IGNORE calendar_schedules SET course_slug = ? WHERE course_slug IN (${placeholders})`
+      ).run(destination, ...sources);
+      db.query(
+        `DELETE FROM calendar_schedules WHERE course_slug IN (${placeholders})`
+      ).run(...sources);
+      db.query(
+        `UPDATE OR IGNORE calendar_events SET course_slug = ? WHERE course_slug IN (${placeholders})`
+      ).run(destination, ...sources);
+      db.query(
+        `DELETE FROM calendar_events WHERE course_slug IN (${placeholders})`
+      ).run(...sources);
     }
     return { ok: true, destinationSlug: destination };
   })
@@ -1190,9 +1295,11 @@ const app = new Elysia()
     currentSettings = nextSettings;
     watcher.updateRoots(nextSettings.watchRoots);
 
-    // Clear DB state (jobs/tasks).
+    // Clear DB state (jobs/tasks/calendar).
     db.exec("DELETE FROM jobs;");
     db.exec("DELETE FROM tasks;");
+    db.exec("DELETE FROM calendar_schedules;");
+    db.exec("DELETE FROM calendar_events;");
 
     // Clear local caches/logs/revisions.
     await fs.rm(path.join(config.stateDir, "cache"), {
