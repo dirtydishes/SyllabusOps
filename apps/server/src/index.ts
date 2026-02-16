@@ -49,6 +49,7 @@ import { Logger } from "./logger";
 import { keychainStore } from "./secrets/keychain";
 import { SseHub } from "./sse";
 import { createTasksStore } from "./tasks/store";
+import { indexPdfTextbookCache, listTextbookCatalog } from "./textbooks/index";
 import { createWatcher } from "./watcher/watcher";
 
 const config = loadConfig();
@@ -309,10 +310,25 @@ const runner = createJobRunner({
           sha256,
           stateDir: config.stateDir,
         });
+        const indexed = await indexPdfTextbookCache({
+          canonicalPath,
+          sha256,
+          stateDir: config.stateDir,
+          unifiedDir: currentSettings.unifiedDir,
+        });
         logger.info("extract.pdf.cached", {
           canonicalPath,
           sha256,
           textPath: out.textPath,
+        });
+        logger.info("textbook.indexed", {
+          canonicalPath,
+          sha256,
+          relPath: indexed.relPath,
+          courseSlug: indexed.courseSlug,
+          chunkCount: indexed.chunkCount,
+          fromCache: indexed.fromCache,
+          indexPath: indexed.indexPath,
         });
         return "succeed";
       }
@@ -1070,6 +1086,21 @@ const app = new Elysia()
       registry: courseRegistry,
     }),
   }))
+  .get("/api/textbooks", async ({ query }) => {
+    const q = z
+      .object({
+        courseSlug: z.string().min(1).optional(),
+      })
+      .parse(query);
+    const courseSlug = q.courseSlug
+      ? await courseRegistry.resolveCanonical(q.courseSlug)
+      : undefined;
+    const textbooks = await listTextbookCatalog({
+      stateDir: config.stateDir,
+      courseSlug,
+    });
+    return { textbooks };
+  })
   .get("/api/courses/:courseSlug", async ({ params }) => {
     const courseSlug = z
       .object({ courseSlug: z.string().min(1) })
