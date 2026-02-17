@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import {
   type ArtifactSummary,
   type CourseDetail,
@@ -20,6 +25,8 @@ type RunningAction = "suggest_tasks" | "generate_summary";
 type RunningJob = {
   id: string;
   action: RunningAction;
+  state: "running" | "complete";
+  summaryPath?: string;
 };
 
 function toChip(kind: ArtifactSummary["kind"]): {
@@ -35,6 +42,7 @@ function toChip(kind: ArtifactSummary["kind"]): {
 
 export function ClassDetailPage() {
   const { courseSlug } = useParams();
+  const navigate = useNavigate();
   const [search, setSearch] = useSearchParams();
 
   const [detail, setDetail] = useState<CourseDetail | null>(null);
@@ -66,6 +74,12 @@ export function ClassDetailPage() {
 
   function removeRunningJob(jobId: string) {
     setRunningJobs((prev) => prev.filter((j) => j.id !== jobId));
+  }
+
+  function markRunningJobComplete(jobId: string) {
+    setRunningJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, state: "complete" } : j))
+    );
   }
 
   async function trackQueuedJob(opts: {
@@ -105,24 +119,21 @@ export function ClassDetailPage() {
       if (next.status === "queued" || next.status === "running") continue;
 
       if (next.status === "succeeded") {
-        if (opts.action === "suggest_tasks") {
-          await refreshTasks();
-        } else {
-          setSummaryMsg(
-            "Summary generated. Open Summary to view latest output."
-          );
+        if (opts.action === "generate_summary") {
+          setSummaryMsg("Summary generated. Click the popup to open it.");
         }
-      } else {
-        const reason = next.last_error?.trim()
-          ? next.last_error
-          : `Job ${next.status}`;
-        if (opts.action === "suggest_tasks") {
-          setTasksError(reason);
-        } else {
-          setSummaryError(reason);
-        }
+        markRunningJobComplete(opts.job.id);
+        return;
       }
 
+      const reason = next.last_error?.trim()
+        ? next.last_error
+        : `Job ${next.status}`;
+      if (opts.action === "suggest_tasks") {
+        setTasksError(reason);
+      } else {
+        setSummaryError(reason);
+      }
       removeRunningJob(opts.job.id);
       return;
     }
@@ -222,7 +233,11 @@ export function ClassDetailPage() {
         courseSlug,
         sessionDate: session.date,
       });
-      addRunningJob({ id: queued.job.id, action: "suggest_tasks" });
+      addRunningJob({
+        id: queued.job.id,
+        action: "suggest_tasks",
+        state: "running",
+      });
       void trackQueuedJob({ job: queued.job, action: "suggest_tasks" });
     } catch (e: unknown) {
       setTasksError(String((e as Error)?.message ?? e));
@@ -241,7 +256,12 @@ export function ClassDetailPage() {
         courseSlug,
         sessionDate: session.date,
       });
-      addRunningJob({ id: queued.job.id, action: "generate_summary" });
+      addRunningJob({
+        id: queued.job.id,
+        action: "generate_summary",
+        state: "running",
+        summaryPath: session.generated.sessionSummaryPath,
+      });
       setSummaryMsg(
         "Summary job queued. We will keep this indicator visible until it finishes."
       );
@@ -280,6 +300,19 @@ export function ClassDetailPage() {
       dismissed: all.filter((t) => t.status === "dismissed"),
     };
   }, [tasks]);
+
+  function onToastClick(job: RunningJob) {
+    if (job.state !== "complete") return;
+    if (job.action === "generate_summary" && job.summaryPath) {
+      navigate(`/editor?path=${encodeURIComponent(job.summaryPath)}`);
+      removeRunningJob(job.id);
+      return;
+    }
+    if (job.action === "suggest_tasks") {
+      void refreshTasks();
+      removeRunningJob(job.id);
+    }
+  }
 
   if (!courseSlug) {
     return (
@@ -639,15 +672,57 @@ export function ClassDetailPage() {
       {runningJobs.length > 0 ? (
         <div className="job-toast-stack" aria-live="polite">
           {runningJobs.map((job) => (
-            <output key={job.id} className="job-toast">
-              <span className="job-toast-spinner" aria-hidden="true" />
-              <span className="mono">
-                Task running:{" "}
-                {job.action === "suggest_tasks"
-                  ? "Suggest Tasks"
-                  : "Generate Summary"}
-              </span>
-            </output>
+            <div
+              key={job.id}
+              className={
+                job.state === "complete"
+                  ? "job-toast job-toast-complete"
+                  : "job-toast job-toast-running"
+              }
+            >
+              {job.state === "complete" ? (
+                <>
+                  <button
+                    type="button"
+                    className="job-toast-button"
+                    onClick={() => onToastClick(job)}
+                  >
+                    <span
+                      className="job-toast-complete-icon"
+                      aria-hidden="true"
+                    >
+                      ✓
+                    </span>
+                    <span className="mono">
+                      Task complete:{" "}
+                      {job.action === "suggest_tasks"
+                        ? "Suggest Tasks"
+                        : "Generate Summary"}
+                      {" — "}
+                      {job.action === "suggest_tasks"
+                        ? "click to reload"
+                        : "click to view"}
+                    </span>
+                  </button>
+                  <div className="job-toast-progress" aria-hidden="true">
+                    <span
+                      className="job-toast-progress-fill"
+                      onAnimationEnd={() => removeRunningJob(job.id)}
+                    />
+                  </div>
+                </>
+              ) : (
+                <output className="job-toast-running-text">
+                  <span className="job-toast-spinner" aria-hidden="true" />
+                  <span className="mono">
+                    Task running:{" "}
+                    {job.action === "suggest_tasks"
+                      ? "Suggest Tasks"
+                      : "Generate Summary"}
+                  </span>
+                </output>
+              )}
+            </div>
           ))}
         </div>
       ) : null}
