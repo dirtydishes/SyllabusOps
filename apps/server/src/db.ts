@@ -110,6 +110,27 @@ function migrate(db: Db) {
         ON calendar_events(course_slug, starts_at);
     `);
   });
+
+  applyMigration(db, "2026-02-16_sections_v1", () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS course_sections (
+        id TEXT PRIMARY KEY,
+        course_slug TEXT NOT NULL,
+        slug TEXT NOT NULL,
+        title TEXT NOT NULL,
+        start_date TEXT NOT NULL,
+        end_date TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_course_sections_slug
+        ON course_sections(course_slug, slug);
+      CREATE INDEX IF NOT EXISTS idx_course_sections_course_date
+        ON course_sections(course_slug, start_date, end_date);
+    `);
+  });
 }
 
 function applyMigration(db: Db, id: string, fn: () => void) {

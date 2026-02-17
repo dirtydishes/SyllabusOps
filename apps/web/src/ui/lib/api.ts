@@ -110,6 +110,18 @@ export type CalendarEventRow = {
   updated_at: string;
 };
 
+export type SectionRow = {
+  id: string;
+  course_slug: string;
+  slug: string;
+  title: string;
+  start_date: string;
+  end_date: string;
+  description: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type JobStatus =
   | "queued"
   | "running"
@@ -293,6 +305,74 @@ export async function importCalendarIcs(input: {
     body: JSON.stringify({
       action: "import_ics",
       ...input,
+    }),
+  });
+}
+
+export async function getSections(input: {
+  courseSlug: string;
+}): Promise<{ sections: SectionRow[] }> {
+  const url = new URL("/api/sections", window.location.origin);
+  url.searchParams.set("courseSlug", input.courseSlug);
+  return await http<{ sections: SectionRow[] }>(url);
+}
+
+export async function upsertSection(input: {
+  courseSlug: string;
+  slug?: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  description?: string;
+}): Promise<{ ok: true; section: SectionRow }> {
+  return await http<{ ok: true; section: SectionRow }>("/api/sections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "upsert_section",
+      ...input,
+    }),
+  });
+}
+
+export async function deleteSection(
+  id: string
+): Promise<{ ok: true; changed: number }> {
+  return await http<{ ok: true; changed: number }>("/api/sections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "delete_section",
+      id,
+    }),
+  });
+}
+
+export async function generateSectionDoc(id: string): Promise<{
+  ok: true;
+  section: SectionRow;
+  generated: {
+    relPath: string;
+    absolutePath: string;
+    sessionCount: number;
+    textbookCount: number;
+  };
+}> {
+  return await http<{
+    ok: true;
+    section: SectionRow;
+    generated: {
+      relPath: string;
+      absolutePath: string;
+      sessionCount: number;
+      textbookCount: number;
+    };
+  }>("/api/sections", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "generate_section_doc",
+      id,
     }),
   });
 }

@@ -47,6 +47,8 @@ import { createCodexAppServer } from "./llm/codex-app-server";
 import { openAiJsonSchema } from "./llm/openai-responses";
 import { Logger } from "./logger";
 import { keychainStore } from "./secrets/keychain";
+import { generateUnifiedSectionDoc } from "./sections/doc";
+import { createSectionsStore } from "./sections/store";
 import { SseHub } from "./sse";
 import { createTasksStore } from "./tasks/store";
 import { indexPdfTextbookCache, listTextbookCatalog } from "./textbooks/index";
@@ -63,6 +65,7 @@ const courseRegistry = createCourseRegistry({
   stateDir: config.stateDir,
   logger,
 });
+const sectionsStore = createSectionsStore(db);
 
 logger.subscribe((evt) => sse.broadcast({ type: "log", payload: evt }));
 
@@ -1025,6 +1028,114 @@ const app = new Elysia()
       limit: q.limit,
     });
     return { tasks };
+  })
+  .get("/api/sections", async ({ query }) => {
+    const q = z
+      .object({
+        courseSlug: z.string().min(1),
+      })
+      .parse(query);
+    const canonical = await courseRegistry.resolveCanonical(q.courseSlug);
+    const sections = sectionsStore.list({ courseSlug: canonical });
+    return { sections };
+  })
+  .post("/api/sections", async ({ body }) => {
+    const b = z
+      .discriminatedUnion("action", [
+        z.object({
+          action: z.literal("upsert_section"),
+          courseSlug: z.string().min(1),
+          slug: z.string().optional(),
+          title: z.string().min(1),
+          startDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          endDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          description: z.string().optional(),
+        }),
+        z.object({
+          action: z.literal("delete_section"),
+          id: z.string().min(1),
+        }),
+        z.object({
+          action: z.literal("generate_section_doc"),
+          id: z.string().min(1),
+        }),
+      ])
+      .parse(body);
+
+    if (b.action === "upsert_section") {
+      if (b.startDate > b.endDate) {
+        return new Response(
+          JSON.stringify({ error: "SECTION_DATE_RANGE_INVALID" }),
+          {
+            status: 400,
+            headers: { "Content-Type": "application/json" },
+          }
+        );
+      }
+      const canonical = await courseRegistry.resolveCanonical(b.courseSlug);
+      const section = sectionsStore.upsert({
+        courseSlug: canonical,
+        slug: b.slug,
+        title: b.title,
+        startDate: b.startDate,
+        endDate: b.endDate,
+        description: b.description,
+      });
+      logger.info("sections.upsert", {
+        id: section.id,
+        courseSlug: canonical,
+        slug: section.slug,
+        startDate: section.start_date,
+        endDate: section.end_date,
+      });
+      return { ok: true as const, section };
+    }
+
+    if (b.action === "delete_section") {
+      const result = sectionsStore.delete(b.id);
+      logger.info("sections.delete", { id: b.id, changed: result.changed });
+      return result;
+    }
+
+    const section = sectionsStore.getById(b.id);
+    if (!section) {
+      return new Response(JSON.stringify({ error: "SECTION_NOT_FOUND" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const scanned = await scanCourseDetailGrouped({
+      unifiedDir: currentSettings.unifiedDir,
+      stateDir: config.stateDir,
+      registry: courseRegistry,
+      courseSlug: section.course_slug,
+    });
+    if (!scanned.ok) {
+      return new Response(JSON.stringify({ error: scanned.error }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const generated = await generateUnifiedSectionDoc({
+      unifiedDir: currentSettings.unifiedDir,
+      stateDir: config.stateDir,
+      course: {
+        slug: scanned.course.slug,
+        name: scanned.course.name,
+      },
+      section,
+      sessions: scanned.sessions,
+    });
+    logger.info("sections.generated", {
+      sectionId: section.id,
+      courseSlug: scanned.course.slug,
+      relPath: generated.relPath,
+      sessionCount: generated.sessionCount,
+      textbookCount: generated.textbookCount,
+    });
+    return { ok: true as const, section, generated };
   })
   .post("/api/tasks/suggest", ({ body }) => {
     const b = z
