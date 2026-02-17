@@ -340,6 +340,43 @@
   background: rgba(180, 190, 254, 0.08);
 }
 
+.job-toast-stack {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 40;
+}
+
+.job-toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(180, 190, 254, 0.35);
+  background: rgba(30, 30, 46, 0.92);
+  box-shadow: 0 10px 28px var(--shadow);
+  color: var(--text);
+}
+
+.job-toast-spinner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid rgba(180, 190, 254, 0.32);
+  border-top-color: var(--lavender);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

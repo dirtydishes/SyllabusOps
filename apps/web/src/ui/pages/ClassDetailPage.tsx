@@ -14,6 +14,8 @@ import {
   summarizeSession,
 } from "../lib/api";
 
+type RunningAction = "suggest_tasks" | "generate_summary";
+
 function toChip(kind: ArtifactSummary["kind"]): {
   className: string;
   label: string;
@@ -38,6 +40,7 @@ export function ClassDetailPage() {
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryMsg, setSummaryMsg] = useState<string | null>(null);
+  const [runningActions, setRunningActions] = useState<RunningAction[]>([]);
 
   const [preview, setPreview] = useState<{
     title: string;
@@ -48,6 +51,16 @@ export function ClassDetailPage() {
   const [previewBusy, setPreviewBusy] = useState(false);
 
   const selectedDate = search.get("date");
+
+  function startRunningAction(action: RunningAction) {
+    setRunningActions((prev) =>
+      prev.includes(action) ? prev : [...prev, action]
+    );
+  }
+
+  function endRunningAction(action: RunningAction) {
+    setRunningActions((prev) => prev.filter((a) => a !== action));
+  }
 
   useEffect(() => {
     if (!courseSlug) return;
@@ -131,12 +144,14 @@ export function ClassDetailPage() {
     if (!courseSlug || !session?.date) return;
     setTasksError(null);
     setTasksBusy(true);
+    startRunningAction("suggest_tasks");
     try {
       await suggestTasks({ courseSlug, sessionDate: session.date });
     } catch (e: unknown) {
       setTasksError(String((e as Error)?.message ?? e));
     } finally {
       setTasksBusy(false);
+      endRunningAction("suggest_tasks");
     }
   }
 
@@ -145,6 +160,7 @@ export function ClassDetailPage() {
     setSummaryError(null);
     setSummaryMsg(null);
     setSummaryBusy(true);
+    startRunningAction("generate_summary");
     try {
       await summarizeSession({ courseSlug, sessionDate: session.date });
       setSummaryMsg(
@@ -154,6 +170,7 @@ export function ClassDetailPage() {
       setSummaryError(String((e as Error)?.message ?? e));
     } finally {
       setSummaryBusy(false);
+      endRunningAction("generate_summary");
     }
   }
 
@@ -539,6 +556,22 @@ export function ClassDetailPage() {
           </div>
         </div>
       )}
+
+      {runningActions.length > 0 ? (
+        <div className="job-toast-stack" aria-live="polite">
+          {runningActions.map((action) => (
+            <output key={action} className="job-toast">
+              <span className="job-toast-spinner" aria-hidden="true" />
+              <span className="mono">
+                Task running:{" "}
+                {action === "suggest_tasks"
+                  ? "Suggest Tasks"
+                  : "Generate Summary"}
+              </span>
+            </output>
+          ))}
+        </div>
+      ) : null}
 
       {preview ? (
         <div
