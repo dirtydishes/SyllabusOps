@@ -380,8 +380,8 @@ export async function generateSectionDoc(id: string): Promise<{
 export async function suggestTasks(input: {
   courseSlug: string;
   sessionDate: string;
-}): Promise<{ job: unknown }> {
-  return await http<{ job: unknown }>("/api/tasks/suggest", {
+}): Promise<{ job: JobRecord }> {
+  return await http<{ job: JobRecord }>("/api/tasks/suggest", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
@@ -391,8 +391,8 @@ export async function suggestTasks(input: {
 export async function summarizeSession(input: {
   courseSlug: string;
   sessionDate: string;
-}): Promise<{ job: unknown }> {
-  return await http<{ job: unknown }>("/api/sessions/summarize", {
+}): Promise<{ job: JobRecord }> {
+  return await http<{ job: JobRecord }>("/api/sessions/summarize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),

@@ -3,11 +3,13 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   type ArtifactSummary,
   type CourseDetail,
+  type JobRecord,
   type TaskRow,
   approveTask,
   dismissTask,
   getCourseDetail,
   getExtractedText,
+  getJobs,
   getTasks,
   markTaskDone,
   suggestTasks,
@@ -15,6 +17,10 @@ import {
 } from "../lib/api";
 
 type RunningAction = "suggest_tasks" | "generate_summary";
+type RunningJob = {
+  id: string;
+  action: RunningAction;
+};
 
 function toChip(kind: ArtifactSummary["kind"]): {
   className: string;
@@ -40,7 +46,7 @@ export function ClassDetailPage() {
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryMsg, setSummaryMsg] = useState<string | null>(null);
-  const [runningActions, setRunningActions] = useState<RunningAction[]>([]);
+  const [runningJobs, setRunningJobs] = useState<RunningJob[]>([]);
 
   const [preview, setPreview] = useState<{
     title: string;
@@ -52,14 +58,81 @@ export function ClassDetailPage() {
 
   const selectedDate = search.get("date");
 
-  function startRunningAction(action: RunningAction) {
-    setRunningActions((prev) =>
-      prev.includes(action) ? prev : [...prev, action]
+  function addRunningJob(job: RunningJob) {
+    setRunningJobs((prev) =>
+      prev.some((j) => j.id === job.id) ? prev : [...prev, job]
     );
   }
 
-  function endRunningAction(action: RunningAction) {
-    setRunningActions((prev) => prev.filter((a) => a !== action));
+  function removeRunningJob(jobId: string) {
+    setRunningJobs((prev) => prev.filter((j) => j.id !== jobId));
+  }
+
+  async function trackQueuedJob(opts: {
+    job: JobRecord;
+    action: RunningAction;
+  }) {
+    const pollMs = 1_500;
+    const maxPolls = 400; // 10 minutes
+    let missed = 0;
+
+    for (let i = 0; i < maxPolls; i++) {
+      await new Promise((resolve) => setTimeout(resolve, pollMs));
+
+      let next: JobRecord | null = null;
+      try {
+        const listed = await getJobs({ limit: 1000 });
+        next = listed.jobs.find((j) => j.id === opts.job.id) ?? null;
+      } catch (e: unknown) {
+        const msg = String((e as Error)?.message ?? e);
+        if (opts.action === "suggest_tasks") {
+          setTasksError(`Failed to check job status: ${msg}`);
+        } else {
+          setSummaryError(`Failed to check job status: ${msg}`);
+        }
+        removeRunningJob(opts.job.id);
+        return;
+      }
+
+      if (!next) {
+        missed += 1;
+        if (missed < 5) continue;
+        removeRunningJob(opts.job.id);
+        return;
+      }
+      missed = 0;
+
+      if (next.status === "queued" || next.status === "running") continue;
+
+      if (next.status === "succeeded") {
+        if (opts.action === "suggest_tasks") {
+          await refreshTasks();
+        } else {
+          setSummaryMsg(
+            "Summary generated. Open Summary to view latest output."
+          );
+        }
+      } else {
+        const reason = next.last_error?.trim()
+          ? next.last_error
+          : `Job ${next.status}`;
+        if (opts.action === "suggest_tasks") {
+          setTasksError(reason);
+        } else {
+          setSummaryError(reason);
+        }
+      }
+
+      removeRunningJob(opts.job.id);
+      return;
+    }
+
+    if (opts.action === "suggest_tasks") {
+      setTasksError("Timed out waiting for task job to finish.");
+    } else {
+      setSummaryError("Timed out waiting for summary job to finish.");
+    }
+    removeRunningJob(opts.job.id);
   }
 
   useEffect(() => {
@@ -144,14 +217,17 @@ export function ClassDetailPage() {
     if (!courseSlug || !session?.date) return;
     setTasksError(null);
     setTasksBusy(true);
-    startRunningAction("suggest_tasks");
     try {
-      await suggestTasks({ courseSlug, sessionDate: session.date });
+      const queued = await suggestTasks({
+        courseSlug,
+        sessionDate: session.date,
+      });
+      addRunningJob({ id: queued.job.id, action: "suggest_tasks" });
+      void trackQueuedJob({ job: queued.job, action: "suggest_tasks" });
     } catch (e: unknown) {
       setTasksError(String((e as Error)?.message ?? e));
     } finally {
       setTasksBusy(false);
-      endRunningAction("suggest_tasks");
     }
   }
 
@@ -160,17 +236,20 @@ export function ClassDetailPage() {
     setSummaryError(null);
     setSummaryMsg(null);
     setSummaryBusy(true);
-    startRunningAction("generate_summary");
     try {
-      await summarizeSession({ courseSlug, sessionDate: session.date });
+      const queued = await summarizeSession({
+        courseSlug,
+        sessionDate: session.date,
+      });
+      addRunningJob({ id: queued.job.id, action: "generate_summary" });
       setSummaryMsg(
-        "Summary job queued. Open Summary to view (refresh after it completes)."
+        "Summary job queued. We will keep this indicator visible until it finishes."
       );
+      void trackQueuedJob({ job: queued.job, action: "generate_summary" });
     } catch (e: unknown) {
       setSummaryError(String((e as Error)?.message ?? e));
     } finally {
       setSummaryBusy(false);
-      endRunningAction("generate_summary");
     }
   }
 
@@ -557,14 +636,14 @@ export function ClassDetailPage() {
         </div>
       )}
 
-      {runningActions.length > 0 ? (
+      {runningJobs.length > 0 ? (
         <div className="job-toast-stack" aria-live="polite">
-          {runningActions.map((action) => (
-            <output key={action} className="job-toast">
+          {runningJobs.map((job) => (
+            <output key={job.id} className="job-toast">
               <span className="job-toast-spinner" aria-hidden="true" />
               <span className="mono">
                 Task running:{" "}
-                {action === "suggest_tasks"
+                {job.action === "suggest_tasks"
                   ? "Suggest Tasks"
                   : "Generate Summary"}
               </span>
