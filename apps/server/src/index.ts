@@ -46,6 +46,14 @@ import {
 import { createCodexAppServer } from "./llm/codex-app-server";
 import { openAiJsonSchema } from "./llm/openai-responses";
 import { Logger } from "./logger";
+import {
+  NotionAuthStatusSchema,
+  createNotionAuth,
+  parseNotionIdentity,
+} from "./notion/auth";
+import { createNotionClient, normalizeNotionId } from "./notion/client";
+import { createNotionPublisher } from "./notion/publisher";
+import { createNotionStore } from "./notion/store";
 import { keychainStore } from "./secrets/keychain";
 import { generateUnifiedSectionDoc } from "./sections/doc";
 import { createSectionsStore } from "./sections/store";
@@ -81,6 +89,9 @@ const SettingsSchema = z.object({
   openaiReasoningEffort: z.enum(["low", "medium", "high"]).optional(),
   codexModel: z.string().min(1).default("gpt-5.2-codex"),
   codexEffort: z.enum(["low", "medium", "high", "xhigh"]).optional(),
+  notionEnabled: z.boolean().default(false),
+  notionRootPageId: z.string().optional(),
+  notionApiVersion: z.string().min(1).default("2025-09-03"),
 });
 type Settings = z.infer<typeof SettingsSchema>;
 
@@ -93,12 +104,14 @@ function normalizeShellEscapedPath(p: string): string {
 }
 
 function normalizeSettings(s: Settings): Settings {
+  const notionRoot = s.notionRootPageId?.trim();
   return {
     ...s,
     unifiedDir: normalizeShellEscapedPath(s.unifiedDir),
     watchRoots: (s.watchRoots ?? [])
       .map(normalizeShellEscapedPath)
       .filter(Boolean),
+    notionRootPageId: notionRoot ? normalizeNotionId(notionRoot) : undefined,
   };
 }
 
@@ -122,6 +135,9 @@ async function readSettings(): Promise<Settings> {
     openaiReasoningEffort: undefined,
     codexModel: "gpt-5.2-codex",
     codexEffort: undefined,
+    notionEnabled: false,
+    notionRootPageId: undefined,
+    notionApiVersion: "2025-09-03",
   };
 }
 
@@ -143,6 +159,22 @@ const openaiAuth = createOpenAiAuth({
   secrets,
   logger,
   now: () => new Date(),
+});
+
+const notionAuth = createNotionAuth({
+  secrets,
+  logger,
+});
+const notionStore = createNotionStore(db);
+const notionClient = createNotionClient({
+  getToken: async () => await notionAuth.getToken(),
+  getApiVersion: () => currentSettings.notionApiVersion,
+  logger,
+});
+const notionPublisher = createNotionPublisher({
+  notion: notionClient,
+  store: notionStore,
+  logger,
 });
 
 const codex = createCodexAppServer({ logger });
@@ -769,6 +801,138 @@ const runner = createJobRunner({
 
         return "succeed";
       }
+      case "publish_notion_session": {
+        const payload = JSON.parse(job.payload_json) as {
+          courseSlug?: unknown;
+          sessionDate?: unknown;
+        };
+        const courseSlug =
+          typeof payload.courseSlug === "string" ? payload.courseSlug : null;
+        const sessionDate =
+          typeof payload.sessionDate === "string" ? payload.sessionDate : null;
+        if (!courseSlug || !sessionDate) {
+          throw new Error(
+            "Invalid publish_notion_session payload: courseSlug and sessionDate required."
+          );
+        }
+
+        if (!currentSettings.notionEnabled) {
+          queue.block(job.id, "NOTION_DISABLED");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "NOTION_DISABLED",
+          });
+          return "skip";
+        }
+
+        const notionToken = await notionAuth.getToken();
+        if (!notionToken) {
+          queue.block(job.id, "NOTION_TOKEN_REQUIRED");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "NOTION_TOKEN_REQUIRED",
+          });
+          return "skip";
+        }
+
+        const rootPageId = currentSettings.notionRootPageId?.trim();
+        if (!rootPageId) {
+          queue.block(job.id, "NOTION_ROOT_PAGE_REQUIRED");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "NOTION_ROOT_PAGE_REQUIRED",
+          });
+          return "skip";
+        }
+
+        const scanned = await scanSessionGrouped({
+          unifiedDir: currentSettings.unifiedDir,
+          stateDir: config.stateDir,
+          registry: courseRegistry,
+          courseSlug,
+          sessionDate,
+        });
+        if (!scanned.ok) {
+          queue.block(job.id, scanned.error);
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: scanned.error,
+          });
+          return "skip";
+        }
+
+        const summaryRelPath = `${scanned.course.slug}/generated/sessions/${sessionDate}/session-summary.md`;
+        const resolvedSummary = resolveWithinRoot(
+          currentSettings.unifiedDir,
+          summaryRelPath
+        );
+        if (!resolvedSummary.ok) {
+          queue.block(job.id, "SUMMARY_PATH_DENIED");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "SUMMARY_PATH_DENIED",
+          });
+          return "skip";
+        }
+
+        let summaryMarkdown = "";
+        try {
+          summaryMarkdown = await fs.readFile(
+            resolvedSummary.absolutePath,
+            "utf8"
+          );
+        } catch {
+          queue.block(job.id, "SUMMARY_NOT_FOUND");
+          logger.warn("job.blocked", {
+            job_id: job.id,
+            reason: "SUMMARY_NOT_FOUND",
+          });
+          return "skip";
+        }
+
+        const tasksStore = createTasksStore(db);
+        const sessionTasks = tasksStore
+          .list({
+            courseSlug: scanned.course.slug,
+            sessionDate,
+            limit: 1000,
+          })
+          .filter(
+            (t) =>
+              t.status === "approved" ||
+              t.status === "done" ||
+              t.status === "dismissed"
+          )
+          .map((t) => ({
+            id: t.id,
+            title: t.title,
+            description: t.description,
+            due: t.due,
+            status: t.status,
+            confidence: t.confidence,
+          }));
+
+        logger.info("notion.publish.start", {
+          job_id: job.id,
+          courseSlug: scanned.course.slug,
+          sessionDate,
+        });
+
+        await notionPublisher.publishSession({
+          jobId: job.id,
+          rootPageId,
+          course: {
+            slug: scanned.course.slug,
+            name: scanned.course.name,
+          },
+          sessionDate,
+          summaryRelPath,
+          summaryMarkdown,
+          artifactRelPaths: scanned.session.artifacts.map((a) => a.relPath),
+          tasks: sessionTasks,
+        });
+        return "succeed";
+      }
     }
   },
 });
@@ -915,6 +1079,49 @@ const app = new Elysia()
   })
   .post("/api/auth/codex/logout", async () => {
     await codex.logout();
+    return { ok: true };
+  })
+  .get("/api/auth/notion/status", async () => {
+    const token = await notionAuth.getToken();
+    if (!token) {
+      return NotionAuthStatusSchema.parse({
+        ok: true,
+        tokenSet: false,
+        reachable: false,
+        workspaceName: null,
+        botName: null,
+        error: null,
+      });
+    }
+    try {
+      const me = await notionClient.usersMe();
+      const identity = parseNotionIdentity(me);
+      return NotionAuthStatusSchema.parse({
+        ok: true,
+        tokenSet: true,
+        reachable: true,
+        workspaceName: identity.workspaceName,
+        botName: identity.botName,
+        error: null,
+      });
+    } catch (e: unknown) {
+      return NotionAuthStatusSchema.parse({
+        ok: true,
+        tokenSet: true,
+        reachable: false,
+        workspaceName: null,
+        botName: null,
+        error: String((e as Error)?.message ?? e),
+      });
+    }
+  })
+  .post("/api/auth/notion/token", async ({ body }) => {
+    const b = z.object({ token: z.string().min(1) }).parse(body);
+    await notionAuth.setToken(b.token);
+    return { ok: true };
+  })
+  .post("/api/auth/notion/token/clear", async () => {
+    await notionAuth.clearToken();
     return { ok: true };
   })
   .get("/api/calendar", async ({ query }) => {
@@ -1155,6 +1362,92 @@ const app = new Elysia()
       sessionDate: b.sessionDate,
     });
     return { job };
+  })
+  .post("/api/notion/publish/session", async ({ body }) => {
+    const b = z
+      .object({
+        courseSlug: z.string().min(1),
+        sessionDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      })
+      .parse(body);
+    const canonical = await courseRegistry.resolveCanonical(b.courseSlug);
+    const job = queue.enqueue({
+      jobType: "publish_notion_session",
+      payload: { courseSlug: canonical, sessionDate: b.sessionDate },
+      priority: 2,
+    });
+    logger.info("notion.publish.job_enqueued", {
+      job_id: job.id,
+      courseSlug: canonical,
+      sessionDate: b.sessionDate,
+    });
+    return { job };
+  })
+  .post("/api/notion/publish/course", async ({ body }) => {
+    const b = z.object({ courseSlug: z.string().min(1) }).parse(body);
+    const canonical = await courseRegistry.resolveCanonical(b.courseSlug);
+    const scanned = await scanCourseDetailGrouped({
+      unifiedDir: currentSettings.unifiedDir,
+      stateDir: config.stateDir,
+      registry: courseRegistry,
+      courseSlug: canonical,
+    });
+    if (!scanned.ok) {
+      return new Response(JSON.stringify({ error: scanned.error }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    const jobs = [];
+    let skippedMissingSummary = 0;
+    for (const s of scanned.sessions) {
+      const relPath = `${scanned.course.slug}/generated/sessions/${s.date}/session-summary.md`;
+      const resolved = resolveWithinRoot(currentSettings.unifiedDir, relPath);
+      if (!resolved.ok) continue;
+      try {
+        await fs.stat(resolved.absolutePath);
+      } catch {
+        skippedMissingSummary += 1;
+        continue;
+      }
+      const job = queue.enqueue({
+        jobType: "publish_notion_session",
+        payload: { courseSlug: scanned.course.slug, sessionDate: s.date },
+        priority: 2,
+      });
+      jobs.push(job);
+    }
+
+    logger.info("notion.publish.course_enqueued", {
+      courseSlug: scanned.course.slug,
+      queued: jobs.length,
+      skippedMissingSummary,
+    });
+    return {
+      ok: true as const,
+      courseSlug: scanned.course.slug,
+      queued: jobs.length,
+      skippedMissingSummary,
+      totalSessions: scanned.sessions.length,
+      jobs,
+    };
+  })
+  .get("/api/notion/sync-runs", async ({ query }) => {
+    const q = z
+      .object({
+        courseSlug: z.string().min(1).optional(),
+        limit: z.coerce.number().int().positive().max(1000).optional(),
+      })
+      .parse(query);
+    const courseSlug = q.courseSlug
+      ? await courseRegistry.resolveCanonical(q.courseSlug)
+      : undefined;
+    const runs = notionStore.listSyncRuns({
+      courseSlug,
+      limit: q.limit ?? 200,
+    });
+    return { runs };
   })
   .post("/api/sessions/summarize", ({ body }) => {
     const b = z
@@ -1442,6 +1735,8 @@ const app = new Elysia()
     db.exec("DELETE FROM tasks;");
     db.exec("DELETE FROM calendar_schedules;");
     db.exec("DELETE FROM calendar_events;");
+    db.exec("DELETE FROM notion_bindings;");
+    db.exec("DELETE FROM notion_sync_runs;");
 
     // Clear local caches/logs/revisions.
     await fs.rm(path.join(config.stateDir, "cache"), {
@@ -1516,6 +1811,9 @@ const app = new Elysia()
       codexEffort: parsed.codexEffort ?? null,
       openaiModel: parsed.openaiModel,
       openaiReasoningEffort: parsed.openaiReasoningEffort ?? null,
+      notionEnabled: parsed.notionEnabled,
+      notionRootPageIdSet: Boolean(parsed.notionRootPageId),
+      notionApiVersion: parsed.notionApiVersion,
     });
     return { ok: true };
   })

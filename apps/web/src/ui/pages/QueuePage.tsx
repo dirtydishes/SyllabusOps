@@ -21,6 +21,8 @@ const Types: Array<JobType> = [
   "extract_pptx",
   "extract_pdf",
   "suggest_tasks",
+  "summarize_session",
+  "publish_notion_session",
   "noop",
 ];
 

@@ -17,6 +17,9 @@ export type Settings = {
   openaiReasoningEffort?: "low" | "medium" | "high";
   codexModel: string;
   codexEffort?: "low" | "medium" | "high" | "xhigh";
+  notionEnabled: boolean;
+  notionRootPageId?: string;
+  notionApiVersion: string;
   openaiOAuth?: {
     clientId: string;
     authorizeUrl: string;
@@ -135,7 +138,20 @@ export type JobType =
   | "extract_pptx"
   | "extract_pdf"
   | "suggest_tasks"
-  | "summarize_session";
+  | "summarize_session"
+  | "publish_notion_session";
+
+export type NotionSyncStatus = "running" | "succeeded" | "failed" | "blocked";
+export type NotionSyncRun = {
+  id: string;
+  job_id: string | null;
+  course_slug: string;
+  session_date: string | null;
+  status: NotionSyncStatus;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
 
 export type JobRecord = {
   id: string;
@@ -397,6 +413,51 @@ export async function summarizeSession(input: {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
+}
+
+export async function publishSessionToNotion(input: {
+  courseSlug: string;
+  sessionDate: string;
+}): Promise<{ job: JobRecord }> {
+  return await http<{ job: JobRecord }>("/api/notion/publish/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function publishCourseToNotion(input: {
+  courseSlug: string;
+}): Promise<{
+  ok: true;
+  courseSlug: string;
+  queued: number;
+  skippedMissingSummary: number;
+  totalSessions: number;
+  jobs: JobRecord[];
+}> {
+  return await http<{
+    ok: true;
+    courseSlug: string;
+    queued: number;
+    skippedMissingSummary: number;
+    totalSessions: number;
+    jobs: JobRecord[];
+  }>("/api/notion/publish/course", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function getNotionSyncRuns(input?: {
+  courseSlug?: string;
+  limit?: number;
+}): Promise<{ runs: NotionSyncRun[] }> {
+  const url = new URL("/api/notion/sync-runs", window.location.origin);
+  if (input?.courseSlug) url.searchParams.set("courseSlug", input.courseSlug);
+  if (input?.limit) url.searchParams.set("limit", String(input.limit));
+  return await http<{ runs: NotionSyncRun[] }>(url);
 }
 
 export async function approveTask(

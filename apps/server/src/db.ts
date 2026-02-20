@@ -131,6 +131,41 @@ function migrate(db: Db) {
         ON course_sections(course_slug, start_date, end_date);
     `);
   });
+
+  applyMigration(db, "2026-02-20_notion_v1", () => {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS notion_bindings (
+        id TEXT PRIMARY KEY,
+        entity_type TEXT NOT NULL,
+        entity_key TEXT NOT NULL,
+        notion_id TEXT NOT NULL,
+        last_published_hash TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_notion_bindings_entity
+        ON notion_bindings(entity_type, entity_key);
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS notion_sync_runs (
+        id TEXT PRIMARY KEY,
+        job_id TEXT,
+        course_slug TEXT NOT NULL,
+        session_date TEXT,
+        status TEXT NOT NULL,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_notion_sync_runs_course_started
+        ON notion_sync_runs(course_slug, started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_notion_sync_runs_started
+        ON notion_sync_runs(started_at DESC);
+    `);
+  });
 }
 
 function applyMigration(db: Db, id: string, fn: () => void) {

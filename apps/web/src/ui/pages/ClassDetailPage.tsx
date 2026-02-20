@@ -17,11 +17,16 @@ import {
   getJobs,
   getTasks,
   markTaskDone,
+  publishCourseToNotion,
+  publishSessionToNotion,
   suggestTasks,
   summarizeSession,
 } from "../lib/api";
 
-type RunningAction = "suggest_tasks" | "generate_summary";
+type RunningAction =
+  | "suggest_tasks"
+  | "generate_summary"
+  | "publish_notion_session";
 type RunningJob = {
   id: string;
   action: RunningAction;
@@ -54,6 +59,9 @@ export function ClassDetailPage() {
   const [summaryBusy, setSummaryBusy] = useState(false);
   const [summaryError, setSummaryError] = useState<string | null>(null);
   const [summaryMsg, setSummaryMsg] = useState<string | null>(null);
+  const [notionBusy, setNotionBusy] = useState(false);
+  const [notionError, setNotionError] = useState<string | null>(null);
+  const [notionMsg, setNotionMsg] = useState<string | null>(null);
   const [runningJobs, setRunningJobs] = useState<RunningJob[]>([]);
 
   const [preview, setPreview] = useState<{
@@ -101,8 +109,10 @@ export function ClassDetailPage() {
         const msg = String((e as Error)?.message ?? e);
         if (opts.action === "suggest_tasks") {
           setTasksError(`Failed to check job status: ${msg}`);
-        } else {
+        } else if (opts.action === "generate_summary") {
           setSummaryError(`Failed to check job status: ${msg}`);
+        } else {
+          setNotionError(`Failed to check job status: ${msg}`);
         }
         removeRunningJob(opts.job.id);
         return;
@@ -121,6 +131,8 @@ export function ClassDetailPage() {
       if (next.status === "succeeded") {
         if (opts.action === "generate_summary") {
           setSummaryMsg("Summary generated. Click the popup to open it.");
+        } else if (opts.action === "publish_notion_session") {
+          setNotionMsg("Notion publish complete.");
         }
         markRunningJobComplete(opts.job.id);
         return;
@@ -131,8 +143,10 @@ export function ClassDetailPage() {
         : `Job ${next.status}`;
       if (opts.action === "suggest_tasks") {
         setTasksError(reason);
-      } else {
+      } else if (opts.action === "generate_summary") {
         setSummaryError(reason);
+      } else {
+        setNotionError(reason);
       }
       removeRunningJob(opts.job.id);
       return;
@@ -140,8 +154,10 @@ export function ClassDetailPage() {
 
     if (opts.action === "suggest_tasks") {
       setTasksError("Timed out waiting for task job to finish.");
-    } else {
+    } else if (opts.action === "generate_summary") {
       setSummaryError("Timed out waiting for summary job to finish.");
+    } else {
+      setNotionError("Timed out waiting for Notion publish job to finish.");
     }
     removeRunningJob(opts.job.id);
   }
@@ -273,6 +289,63 @@ export function ClassDetailPage() {
     }
   }
 
+  async function onPublishSessionToNotion() {
+    if (!courseSlug || !session?.date) return;
+    setNotionError(null);
+    setNotionMsg(null);
+    setNotionBusy(true);
+    try {
+      const queued = await publishSessionToNotion({
+        courseSlug,
+        sessionDate: session.date,
+      });
+      addRunningJob({
+        id: queued.job.id,
+        action: "publish_notion_session",
+        state: "running",
+      });
+      setNotionMsg(
+        "Notion publish queued. We will keep this indicator visible until it finishes."
+      );
+      void trackQueuedJob({
+        job: queued.job,
+        action: "publish_notion_session",
+      });
+    } catch (e: unknown) {
+      setNotionError(String((e as Error)?.message ?? e));
+    } finally {
+      setNotionBusy(false);
+    }
+  }
+
+  async function onBackfillCourseToNotion() {
+    if (!courseSlug) return;
+    setNotionError(null);
+    setNotionMsg(null);
+    setNotionBusy(true);
+    try {
+      const queued = await publishCourseToNotion({ courseSlug });
+      for (const job of queued.jobs) {
+        addRunningJob({
+          id: job.id,
+          action: "publish_notion_session",
+          state: "running",
+        });
+        void trackQueuedJob({
+          job,
+          action: "publish_notion_session",
+        });
+      }
+      setNotionMsg(
+        `Queued ${queued.queued} Notion publish job(s); skipped ${queued.skippedMissingSummary} session(s) missing summaries.`
+      );
+    } catch (e: unknown) {
+      setNotionError(String((e as Error)?.message ?? e));
+    } finally {
+      setNotionBusy(false);
+    }
+  }
+
   async function setTaskStatus(
     id: string,
     action: "approve" | "dismiss" | "done"
@@ -311,7 +384,9 @@ export function ClassDetailPage() {
     if (job.action === "suggest_tasks") {
       void refreshTasks();
       removeRunningJob(job.id);
+      return;
     }
+    removeRunningJob(job.id);
   }
 
   if (!courseSlug) {
@@ -417,6 +492,22 @@ export function ClassDetailPage() {
                   >
                     {summaryBusy ? "Generating…" : "Generate Summary"}
                   </button>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={notionBusy || !detail}
+                    onClick={() => void onPublishSessionToNotion()}
+                  >
+                    Publish to Notion
+                  </button>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={notionBusy || !detail}
+                    onClick={() => void onBackfillCourseToNotion()}
+                  >
+                    Backfill Course
+                  </button>
                   <Link
                     className="button"
                     to={`/editor?path=${encodeURIComponent(session.generated.sessionNotesPath)}`}
@@ -437,6 +528,10 @@ export function ClassDetailPage() {
               <div className="muted">Summary error: {summaryError}</div>
             ) : null}
             {summaryMsg ? <div className="muted">{summaryMsg}</div> : null}
+            {notionError ? (
+              <div className="muted">Notion error: {notionError}</div>
+            ) : null}
+            {notionMsg ? <div className="muted">{notionMsg}</div> : null}
 
             {!session ? (
               <div className="muted">Select a session.</div>
@@ -697,11 +792,15 @@ export function ClassDetailPage() {
                       Task complete:{" "}
                       {job.action === "suggest_tasks"
                         ? "Suggest Tasks"
-                        : "Generate Summary"}
+                        : job.action === "generate_summary"
+                          ? "Generate Summary"
+                          : "Publish to Notion"}
                       {" — "}
                       {job.action === "suggest_tasks"
                         ? "click to reload"
-                        : "click to view"}
+                        : job.action === "generate_summary"
+                          ? "click to view"
+                          : "click to dismiss"}
                     </span>
                   </button>
                   <div className="job-toast-progress" aria-hidden="true">
@@ -718,7 +817,9 @@ export function ClassDetailPage() {
                     Task running:{" "}
                     {job.action === "suggest_tasks"
                       ? "Suggest Tasks"
-                      : "Generate Summary"}
+                      : job.action === "generate_summary"
+                        ? "Generate Summary"
+                        : "Publish to Notion"}
                   </span>
                 </output>
               )}

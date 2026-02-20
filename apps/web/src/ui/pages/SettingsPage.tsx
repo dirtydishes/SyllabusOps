@@ -15,6 +15,12 @@ import {
   startCodexChatgptLogin,
 } from "../lib/codex";
 import {
+  type NotionStatus,
+  clearNotionToken,
+  getNotionStatus,
+  setNotionToken,
+} from "../lib/notion";
+import {
   type OpenAiStatus,
   clearOpenAiApiKey,
   disconnectOpenAiOAuth,
@@ -31,8 +37,12 @@ export function SettingsPage() {
   const [savedAt, setSavedAt] = useState<string | null>(null);
   const [openAiStatus, setOpenAiStatus] = useState<OpenAiStatus | null>(null);
   const [codexStatus, setCodexStatus] = useState<CodexStatus | null>(null);
+  const [notionStatus, setNotionStatus] = useState<NotionStatus | null>(null);
   const [apiKeyDraft, setApiKeyDraft] = useState("");
+  const [notionTokenDraft, setNotionTokenDraft] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
+  const [notionBusy, setNotionBusy] = useState(false);
+  const [notionMsg, setNotionMsg] = useState<string | null>(null);
   const [modelsBusy, setModelsBusy] = useState(false);
   const [openAiModels, setOpenAiModels] = useState<string[]>([]);
   const [openAiModelsError, setOpenAiModelsError] = useState<string | null>(
@@ -71,6 +81,13 @@ export function SettingsPage() {
       .catch(() => {
         // ignore
       });
+    getNotionStatus()
+      .then((s) => {
+        if (!cancelled) setNotionStatus(s);
+      })
+      .catch(() => {
+        // ignore
+      });
     return () => {
       cancelled = true;
     };
@@ -98,6 +115,11 @@ export function SettingsPage() {
     }
     try {
       setCodexStatus(await getCodexStatus());
+    } catch {
+      // ignore
+    }
+    try {
+      setNotionStatus(await getNotionStatus());
     } catch {
       // ignore
     }
@@ -154,6 +176,57 @@ export function SettingsPage() {
       setError(String((e as Error)?.message ?? e));
     } finally {
       setAuthBusy(false);
+    }
+  }
+
+  async function onSaveNotionToken() {
+    if (!notionTokenDraft.trim()) return;
+    setNotionBusy(true);
+    setError(null);
+    setNotionMsg(null);
+    try {
+      await setNotionToken(notionTokenDraft.trim());
+      setNotionTokenDraft("");
+      setNotionStatus(await getNotionStatus());
+      setNotionMsg("Notion token saved.");
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setNotionBusy(false);
+    }
+  }
+
+  async function onClearNotionToken() {
+    setNotionBusy(true);
+    setError(null);
+    setNotionMsg(null);
+    try {
+      await clearNotionToken();
+      setNotionStatus(await getNotionStatus());
+      setNotionMsg("Notion token cleared.");
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setNotionBusy(false);
+    }
+  }
+
+  async function onTestNotion() {
+    setNotionBusy(true);
+    setError(null);
+    setNotionMsg(null);
+    try {
+      const status = await getNotionStatus();
+      setNotionStatus(status);
+      setNotionMsg(
+        status.reachable
+          ? "Notion connection looks good."
+          : (status.error ?? "Could not reach Notion with current token.")
+      );
+    } catch (e: unknown) {
+      setError(String((e as Error)?.message ?? e));
+    } finally {
+      setNotionBusy(false);
     }
   }
 
@@ -830,6 +903,134 @@ export function SettingsPage() {
             Clear API key
           </button>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">Notion</div>
+        <div className="muted">
+          One-way publish of session summaries and task states into your Notion
+          workspace.
+        </div>
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <label className="row" style={{ gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={value?.notionEnabled ?? false}
+              onChange={(e) =>
+                setValue((v) =>
+                  v ? { ...v, notionEnabled: e.target.checked } : v
+                )
+              }
+            />
+            <span>Enable Notion publishing</span>
+          </label>
+        </div>
+
+        <div className="field">
+          <label htmlFor="notionRootPageId">Root page ID (or URL)</label>
+          <input
+            id="notionRootPageId"
+            className="input mono"
+            value={value?.notionRootPageId ?? ""}
+            onChange={(e) =>
+              setValue((v) =>
+                v ? { ...v, notionRootPageId: e.target.value } : v
+              )
+            }
+            placeholder="https://www.notion.so/... or page id"
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="notionApiVersion">Notion API version</label>
+          <input
+            id="notionApiVersion"
+            className="input mono"
+            value={value?.notionApiVersion ?? "2025-09-03"}
+            onChange={(e) =>
+              setValue((v) =>
+                v ? { ...v, notionApiVersion: e.target.value } : v
+              )
+            }
+            placeholder="2025-09-03"
+          />
+        </div>
+
+        <div className="kv" style={{ marginTop: 10 }}>
+          <div className="k">Token</div>
+          <div className="v">
+            {notionStatus?.tokenSet ? (
+              <span className="chip chip-ok">Set</span>
+            ) : (
+              <span className="chip chip-warn">Missing</span>
+            )}
+          </div>
+        </div>
+        <div className="kv">
+          <div className="k">Connection</div>
+          <div className="v">
+            {notionStatus?.reachable ? (
+              <span className="chip chip-ok">Reachable</span>
+            ) : (
+              <span className="chip chip-warn">Not reachable</span>
+            )}
+            {notionStatus?.workspaceName ? (
+              <span className="muted"> • {notionStatus.workspaceName}</span>
+            ) : null}
+            {notionStatus?.botName ? (
+              <span className="muted"> • {notionStatus.botName}</span>
+            ) : null}
+          </div>
+        </div>
+
+        {notionStatus?.error ? (
+          <div className="card card-error" style={{ marginTop: 12 }}>
+            {notionStatus.error}
+          </div>
+        ) : null}
+
+        <div className="field" style={{ marginTop: 12 }}>
+          <label htmlFor="notionToken">Integration token</label>
+          <input
+            id="notionToken"
+            className="input mono"
+            value={notionTokenDraft}
+            onChange={(e) => setNotionTokenDraft(e.target.value)}
+            placeholder={
+              notionStatus?.tokenSet ? "(set in Keychain)" : "secret_..."
+            }
+          />
+        </div>
+
+        <div className="row">
+          <button
+            type="button"
+            className="button"
+            disabled={!notionTokenDraft.trim() || notionBusy}
+            onClick={() => void onSaveNotionToken()}
+          >
+            Save token
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={!notionStatus?.tokenSet || notionBusy}
+            onClick={() => void onClearNotionToken()}
+          >
+            Clear token
+          </button>
+          <button
+            type="button"
+            className="button"
+            disabled={notionBusy}
+            onClick={() => void onTestNotion()}
+          >
+            {notionBusy ? "Testing…" : "Test connection"}
+          </button>
+        </div>
+
+        {notionMsg ? <div className="muted">{notionMsg}</div> : null}
       </div>
 
       <div className="row">
