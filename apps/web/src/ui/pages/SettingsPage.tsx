@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  useBeforeUnload,
+  unstable_usePrompt as usePrompt,
+} from "react-router-dom";
+import {
   type CodexModelInfo,
   type Settings,
   adminReset,
@@ -30,8 +34,13 @@ import {
 } from "../lib/openai";
 import { formatLocalTimeOnYmd } from "../lib/time";
 
+function settingsFingerprint(value: Settings): string {
+  return JSON.stringify(value);
+}
+
 export function SettingsPage() {
   const [value, setValue] = useState<Settings | null>(null);
+  const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -62,7 +71,10 @@ export function SettingsPage() {
     let cancelled = false;
     getSettings()
       .then((s) => {
-        if (!cancelled) setValue(s);
+        if (!cancelled) {
+          setValue(s);
+          setSavedFingerprint(settingsFingerprint(s));
+        }
       })
       .catch((e) => {
         if (!cancelled) setError(String(e?.message ?? e));
@@ -93,12 +105,30 @@ export function SettingsPage() {
     };
   }, []);
 
+  const hasUnsavedChanges =
+    value !== null &&
+    savedFingerprint !== null &&
+    settingsFingerprint(value) !== savedFingerprint;
+
+  usePrompt({
+    when: hasUnsavedChanges,
+    message:
+      "You have unsaved settings changes. Save before leaving this page?",
+  });
+
+  useBeforeUnload((event) => {
+    if (!hasUnsavedChanges) return;
+    event.preventDefault();
+    event.returnValue = "";
+  });
+
   async function onSave() {
     if (!value) return;
     setSaving(true);
     setError(null);
     try {
       await saveSettings(value);
+      setSavedFingerprint(settingsFingerprint(value));
       setSavedAt(new Date().toISOString());
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
@@ -1042,6 +1072,9 @@ export function SettingsPage() {
         >
           {saving ? "Saving…" : "Save settings"}
         </button>
+        {hasUnsavedChanges ? (
+          <div className="muted">Unsaved changes</div>
+        ) : null}
         {savedAt ? (
           <div className="muted">saved at {formatLocalTimeOnYmd(savedAt)}</div>
         ) : null}
