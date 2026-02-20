@@ -15,7 +15,7 @@ const SERVER_BASE_URL = `http://127.0.0.1:${SERVER_PORT}`;
 const SERVER_HEALTH_URL = `${SERVER_BASE_URL}/api/status`;
 const SERVER_START_TIMEOUT_MS = 45_000;
 const SERVER_STOP_TIMEOUT_MS = 4_000;
-const DEFAULT_WEB_DEV_URL = "http://127.0.0.1:5173";
+const DEFAULT_WEB_DEV_URL = "http://localhost:5173";
 
 function normalizeDevUrl(raw: string | undefined): string {
   const cleaned = raw?.trim().replaceAll('"', "").replaceAll("'", "");
@@ -35,6 +35,25 @@ function normalizeDevUrl(raw: string | undefined): string {
 }
 
 const WEB_DEV_URL = normalizeDevUrl(process.env.SYLLABUSOPS_WEB_DEV_URL);
+const DEV_LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"] as const;
+
+function buildDevWebUrlCandidates(primaryUrl: string): string[] {
+  try {
+    const parsed = new URL(primaryUrl);
+    if (!parsed.port) return [DEFAULT_WEB_DEV_URL];
+
+    const urls = new Set<string>();
+    urls.add(parsed.toString());
+    for (const host of DEV_LOOPBACK_HOSTS) {
+      const next = new URL(parsed.toString());
+      next.hostname = host === "[::1]" ? "::1" : host;
+      urls.add(next.toString());
+    }
+    return Array.from(urls);
+  } catch {
+    return [DEFAULT_WEB_DEV_URL];
+  }
+}
 
 const isDev = process.env.SYLLABUSOPS_DESKTOP_DEV === "1";
 
@@ -71,6 +90,25 @@ async function waitForHttpOk(url: string, timeoutMs: number): Promise<void> {
     await sleep(250);
   }
   throw new Error(`Timed out waiting for ${url}`);
+}
+
+async function waitForAnyHttpOk(
+  urls: string[],
+  timeoutMs: number
+): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) return url;
+      } catch {
+        // ignore until timeout
+      }
+    }
+    await sleep(250);
+  }
+  throw new Error(`Timed out waiting for any of: ${urls.join(", ")}`);
 }
 
 function resolveRepoRoot(): string {
@@ -215,13 +253,14 @@ async function createWindow(): Promise<void> {
     return { action: "deny" };
   });
 
-  const targetUrl = isDev ? WEB_DEV_URL : SERVER_BASE_URL;
+  let targetUrl = isDev ? WEB_DEV_URL : SERVER_BASE_URL;
   if (isDev) {
+    const candidates = buildDevWebUrlCandidates(WEB_DEV_URL);
     try {
-      await waitForHttpOk(targetUrl, SERVER_START_TIMEOUT_MS);
-    } catch {
+      targetUrl = await waitForAnyHttpOk(candidates, SERVER_START_TIMEOUT_MS);
+    } catch (e: unknown) {
       throw new Error(
-        `Dev web server not reachable at ${targetUrl}. Run \`bun run dev:desktop\` from repo root or unset SYLLABUSOPS_WEB_DEV_URL.`
+        `Dev web server not reachable (${String((e as Error)?.message ?? e)}). Run \`bun run dev:desktop\` from repo root or unset SYLLABUSOPS_WEB_DEV_URL.`
       );
     }
   }
