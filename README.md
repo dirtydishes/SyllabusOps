@@ -87,6 +87,29 @@ Open the dashboard:
 
 If you visit the API root (`http://localhost:4959/`) you may see `NOT_FOUND` — that’s normal; the UI lives on the Vite port.
 
+## Desktop app (Electron, macOS-first)
+SyllabusOps can run as a macOS desktop app that launches the Bun backend automatically.
+
+Dev mode:
+```sh
+bun run dev:desktop
+```
+
+Build desktop artifacts:
+```sh
+bun run build:desktop
+```
+
+Package DMG:
+```sh
+bun run dist:desktop
+```
+
+Notes:
+- Desktop mode keeps API on `http://localhost:4959` for OAuth callbacks.
+- Backend state defaults to `~/Library/Application Support/SyllabusOps`.
+- You can override Unified and Codex binary with `SYLLABUSOPS_UNIFIED_DIR` and `SYLLABUSOPS_CODEX_BIN`.
+
 ## First-time setup (non-coder friendly)
 1) Open **Settings**
 2) Set **Unified directory** (where SyllabusOps stores its organized library):
@@ -148,6 +171,7 @@ SyllabusOps splits storage into:
 - Ingestion is **disabled by default**. `watch.scan` logs can still appear even when ingest is off; enabling ingest is what causes jobs to enqueue/copy/extract.
 
 ## Repo layout (for the curious)
+- `apps/desktop/` — Electron shell (main/preload), Bun sidecar lifecycle, packaging
 - `apps/server/` — Bun + Elysia API, pipeline engine, watcher, job queue/runner
 - `apps/web/` — React dashboard (TypeScript)
 - `packages/core/` — extraction + schemas + renderers
