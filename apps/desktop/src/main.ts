@@ -15,6 +15,7 @@ const SERVER_BASE_URL = `http://127.0.0.1:${SERVER_PORT}`;
 const SERVER_HEALTH_URL = `${SERVER_BASE_URL}/api/status`;
 const SERVER_START_TIMEOUT_MS = 45_000;
 const SERVER_STOP_TIMEOUT_MS = 4_000;
+const WINDOW_SHOW_FALLBACK_MS = 4_000;
 const DEFAULT_WEB_DEV_URL = "http://localhost:5173";
 
 function normalizeDevUrl(raw: string | undefined): string {
@@ -239,7 +240,7 @@ async function createWindow(): Promise<void> {
     height: 920,
     minWidth: 1100,
     minHeight: 700,
-    show: false,
+    show: isDev,
     webPreferences: {
       preload: resolvePreloadPath(),
       contextIsolation: true,
@@ -252,6 +253,18 @@ async function createWindow(): Promise<void> {
     void shell.openExternal(url);
     return { action: "deny" };
   });
+  mainWindow.webContents.on(
+    "did-fail-load",
+    (_event, code, description, validatedUrl, isMainFrame) => {
+      if (!isMainFrame) return;
+      const msg = `Failed to load ${validatedUrl} (${code}): ${description}`;
+      process.stderr.write(`[desktop:web] ${msg}\n`);
+      dialog.showErrorBox(
+        "SyllabusOps window failed to load",
+        `${msg}\n\nIn dev mode, ensure Vite is running and reachable.`
+      );
+    }
+  );
 
   let targetUrl = isDev ? WEB_DEV_URL : SERVER_BASE_URL;
   if (isDev) {
@@ -264,9 +277,27 @@ async function createWindow(): Promise<void> {
       );
     }
   }
+  const showFallbackTimer = setTimeout(() => {
+    if (!mainWindow) return;
+    if (!mainWindow.isVisible()) {
+      process.stdout.write("[desktop] forcing window show fallback\n");
+      mainWindow.show();
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.focus();
+    }
+  }, WINDOW_SHOW_FALLBACK_MS);
   await mainWindow.loadURL(targetUrl);
+  mainWindow.webContents.once("did-finish-load", () => {
+    if (!mainWindow) return;
+    if (!mainWindow.isVisible()) mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  });
   mainWindow.once("ready-to-show", () => {
+    clearTimeout(showFallbackTimer);
     mainWindow?.show();
+    if (mainWindow?.isMinimized()) mainWindow.restore();
+    mainWindow?.focus();
   });
 
   mainWindow.on("closed", () => {
@@ -293,7 +324,13 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (mainWindow || BrowserWindow.getAllWindows().length > 0) return;
+  if (mainWindow) {
+    if (!mainWindow.isVisible()) mainWindow.show();
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+    return;
+  }
+  if (BrowserWindow.getAllWindows().length > 0) return;
   void createWindow();
 });
 
