@@ -2,9 +2,9 @@
   "name": "@syllabusops/desktop",
   "private": true,
   "type": "commonjs",
-  "main": "dist/main/main.js",
+  "main": "dist/main.js",
   "scripts": {
-    "dev": "bun run build && SYLLABUSOPS_DESKTOP_DEV=1 SYLLABUSOPS_REPO_ROOT=../.. electron dist/main/main.js",
+    "dev": "bun run build && SYLLABUSOPS_DESKTOP_DEV=1 SYLLABUSOPS_REPO_ROOT=../.. electron dist/main.js",
     "build": "tsc -p tsconfig.json",
     "prepare:resources": "node scripts/copy-bun.mjs",
     "pack": "electron-builder --dir",

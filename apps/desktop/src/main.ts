@@ -15,8 +15,24 @@ const SERVER_BASE_URL = `http://127.0.0.1:${SERVER_PORT}`;
 const SERVER_HEALTH_URL = `${SERVER_BASE_URL}/api/status`;
 const SERVER_START_TIMEOUT_MS = 45_000;
 const SERVER_STOP_TIMEOUT_MS = 4_000;
-const WEB_DEV_URL =
-  process.env.SYLLABUSOPS_WEB_DEV_URL ?? "http://127.0.0.1:5173";
+const DEFAULT_WEB_DEV_URL = "http://127.0.0.1:5173";
+
+function normalizeDevUrl(raw: string | undefined): string {
+  const cleaned = raw?.trim().replaceAll('"', "").replaceAll("'", "");
+  if (!cleaned) return DEFAULT_WEB_DEV_URL;
+  const candidate = cleaned.includes("://") ? cleaned : `http://${cleaned}`;
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return DEFAULT_WEB_DEV_URL;
+    }
+    return parsed.toString();
+  } catch {
+    return DEFAULT_WEB_DEV_URL;
+  }
+}
+
+const WEB_DEV_URL = normalizeDevUrl(process.env.SYLLABUSOPS_WEB_DEV_URL);
 
 const isDev = process.env.SYLLABUSOPS_DESKTOP_DEV === "1";
 
@@ -86,7 +102,7 @@ function resolveStateDir(): string {
 }
 
 function resolvePreloadPath(): string {
-  return path.join(__dirname, "..", "preload", "preload.js");
+  return path.join(__dirname, "preload.js");
 }
 
 async function startBackend(): Promise<void> {
