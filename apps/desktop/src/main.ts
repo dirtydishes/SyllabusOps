@@ -26,6 +26,8 @@ function normalizeDevUrl(raw: string | undefined): string {
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
       return DEFAULT_WEB_DEV_URL;
     }
+    // In desktop dev mode we require an explicit port for the Vite server URL.
+    if (!parsed.port) return DEFAULT_WEB_DEV_URL;
     return parsed.toString();
   } catch {
     return DEFAULT_WEB_DEV_URL;
@@ -214,7 +216,15 @@ async function createWindow(): Promise<void> {
   });
 
   const targetUrl = isDev ? WEB_DEV_URL : SERVER_BASE_URL;
-  if (isDev) await waitForHttpOk(targetUrl, SERVER_START_TIMEOUT_MS);
+  if (isDev) {
+    try {
+      await waitForHttpOk(targetUrl, SERVER_START_TIMEOUT_MS);
+    } catch {
+      throw new Error(
+        `Dev web server not reachable at ${targetUrl}. Run \`bun run dev:desktop\` from repo root or unset SYLLABUSOPS_WEB_DEV_URL.`
+      );
+    }
+  }
   await mainWindow.loadURL(targetUrl);
   mainWindow.once("ready-to-show", () => {
     mainWindow?.show();
@@ -258,7 +268,7 @@ void app.whenReady().then(async () => {
       title: "SyllabusOps failed to start",
       message,
       detail:
-        "The backend did not start correctly. Verify Bun is available and port 4959 is free.",
+        "Startup failed. Verify Bun is available, port 4959 is free, and in desktop dev mode that Vite is running on 5173.",
       buttons: ["Quit"],
       defaultId: 0,
       cancelId: 0,
