@@ -1,0 +1,45 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="128" y1="128" x2="896" y2="896" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1E1E2E"/>
+      <stop offset="1" stop-color="#11111B"/>
+    </linearGradient>
+    <linearGradient id="lav" x1="224" y1="240" x2="792" y2="792" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CBA6F7"/>
+      <stop offset="1" stop-color="#B48EED"/>
+    </linearGradient>
+    <filter id="glow" x="140" y="140" width="744" height="744" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feGaussianBlur stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect x="96" y="96" width="832" height="832" rx="176" fill="url(#bg)"/>
+  <rect x="120" y="120" width="784" height="784" rx="152" stroke="#313244" stroke-width="4"/>
+
+  <!-- Open book / operations panel hybrid -->
+  <g filter="url(#glow)">
+    <path d="M256 322C256 289.9 281.9 264 314 264H512V760H314C281.9 760 256 734.1 256 702V322Z" fill="#181825" stroke="url(#lav)" stroke-width="24"/>
+    <path d="M768 322C768 289.9 742.1 264 710 264H512V760H710C742.1 760 768 734.1 768 702V322Z" fill="#181825" stroke="url(#lav)" stroke-width="24"/>
+  </g>
+
+  <!-- Circuit/queue lines -->
+  <rect x="332" y="374" width="144" height="20" rx="10" fill="#CBA6F7"/>
+  <rect x="332" y="430" width="108" height="20" rx="10" fill="#BAC2DE"/>
+  <rect x="332" y="486" width="132" height="20" rx="10" fill="#A6ADC8"/>
+
+  <rect x="548" y="374" width="144" height="20" rx="10" fill="#CBA6F7"/>
+  <rect x="584" y="430" width="108" height="20" rx="10" fill="#BAC2DE"/>
+  <rect x="560" y="486" width="132" height="20" rx="10" fill="#A6ADC8"/>
+
+  <!-- Center spine + check pulse -->
+  <rect x="500" y="296" width="24" height="432" rx="12" fill="url(#lav)"/>
+  <path d="M444 608L486 650L580 556" stroke="#CBA6F7" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Monogram -->
+  <path d="M344 700C344 667 371 640 404 640H448" stroke="#89B4FA" stroke-width="20" stroke-linecap="round"/>
+  <path d="M680 700C680 667 653 640 620 640H576" stroke="#89B4FA" stroke-width="20" stroke-linecap="round"/>
+</svg>

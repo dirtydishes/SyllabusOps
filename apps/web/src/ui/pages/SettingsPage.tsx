@@ -1,8 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  useBeforeUnload,
-  unstable_usePrompt as usePrompt,
-} from "react-router-dom";
+import { useContext, useEffect, useMemo, useState } from "react";
+import { UNSAFE_NavigationContext, useBeforeUnload } from "react-router-dom";
 import {
   type CodexModelInfo,
   type Settings,
@@ -39,6 +36,7 @@ function settingsFingerprint(value: Settings): string {
 }
 
 export function SettingsPage() {
+  const navigation = useContext(UNSAFE_NavigationContext);
   const [value, setValue] = useState<Settings | null>(null);
   const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,11 +108,27 @@ export function SettingsPage() {
     savedFingerprint !== null &&
     settingsFingerprint(value) !== savedFingerprint;
 
-  usePrompt({
-    when: hasUnsavedChanges,
-    message:
-      "You have unsaved settings changes. Save before leaving this page?",
-  });
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+    const navigator = navigation.navigator as {
+      block?: (
+        blocker: (tx: {
+          retry: () => void;
+        }) => void
+      ) => () => void;
+    };
+    if (typeof navigator.block !== "function") return;
+
+    const unblock = navigator.block((tx) => {
+      const ok = window.confirm(
+        "You have unsaved settings changes. Save before leaving this page?"
+      );
+      if (!ok) return;
+      unblock();
+      tx.retry();
+    });
+    return unblock;
+  }, [hasUnsavedChanges, navigation.navigator]);
 
   useBeforeUnload((event) => {
     if (!hasUnsavedChanges) return;
