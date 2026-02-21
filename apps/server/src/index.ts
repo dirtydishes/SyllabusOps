@@ -975,6 +975,59 @@ function looksSafeUnifiedDirForWipe(
   return { ok: true };
 }
 
+const WEB_MIME_BY_EXT: Record<string, string> = {
+  ".css": "text/css; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".ico": "image/x-icon",
+  ".js": "application/javascript; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
+};
+
+function webMimeFor(p: string): string {
+  const ext = path.extname(p).toLowerCase();
+  return WEB_MIME_BY_EXT[ext] ?? "application/octet-stream";
+}
+
+function resolveWebAssetPath(
+  webDistDir: string,
+  reqPath: string
+): string | null {
+  const rel = reqPath.replace(/^\/+/, "");
+  const abs = path.resolve(webDistDir, rel);
+  if (abs === webDistDir) return null;
+  if (!abs.startsWith(`${webDistDir}${path.sep}`)) return null;
+  return abs;
+}
+
+async function readWebAsset(absPath: string): Promise<Uint8Array | null> {
+  try {
+    const st = await fs.stat(absPath);
+    if (!st.isFile()) return null;
+    return await fs.readFile(absPath);
+  } catch (e: unknown) {
+    const code = (e as { code?: unknown })?.code;
+    if (code === "ENOENT" || code === "ENOTDIR") return null;
+    throw e;
+  }
+}
+
+async function serveWebAsset(
+  webDistDir: string,
+  reqPath: string
+): Promise<Response | null> {
+  const absPath = resolveWebAssetPath(webDistDir, reqPath);
+  if (!absPath) return null;
+  const bytes = await readWebAsset(absPath);
+  if (!bytes) return null;
+  return new Response(bytes, {
+    headers: { "Content-Type": webMimeFor(absPath) },
+  });
+}
+
 const app = new Elysia()
   .use(cors())
   .get("/api/status", async () => {
@@ -1904,6 +1957,56 @@ const app = new Elysia()
     });
     return res;
   });
+
+if (config.webDistDir) {
+  const resolvedWebDistDir = path.resolve(config.webDistDir);
+  try {
+    const st = await fs.stat(resolvedWebDistDir);
+    if (!st.isDirectory()) {
+      logger.warn("web.dist.invalid", {
+        webDistDir: resolvedWebDistDir,
+      });
+    } else {
+      logger.info("web.dist.enabled", { webDistDir: resolvedWebDistDir });
+      app
+        .get("/", async () => {
+          const index = await serveWebAsset(resolvedWebDistDir, "/index.html");
+          return (
+            index ??
+            new Response("WEB_INDEX_NOT_FOUND", {
+              status: 500,
+              headers: { "Content-Type": "text/plain; charset=utf-8" },
+            })
+          );
+        })
+        .get("/*", async ({ request }) => {
+          const reqPath = decodeURIComponent(new URL(request.url).pathname);
+          if (reqPath.startsWith("/api/")) {
+            return new Response("NOT_FOUND", {
+              status: 404,
+              headers: { "Content-Type": "text/plain; charset=utf-8" },
+            });
+          }
+
+          const direct = await serveWebAsset(resolvedWebDistDir, reqPath);
+          if (direct) return direct;
+          const spa = await serveWebAsset(resolvedWebDistDir, "/index.html");
+          return (
+            spa ??
+            new Response("WEB_INDEX_NOT_FOUND", {
+              status: 500,
+              headers: { "Content-Type": "text/plain; charset=utf-8" },
+            })
+          );
+        });
+    }
+  } catch (e: unknown) {
+    logger.warn("web.dist.missing", {
+      webDistDir: resolvedWebDistDir,
+      error: String((e as Error)?.message ?? e),
+    });
+  }
+}
 
 app.listen(config.port);
 logger.info("server.start", { port: config.port, stateDir: config.stateDir });

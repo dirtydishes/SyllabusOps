@@ -6,6 +6,11 @@
     "dev": "concurrently -n server,web -c magenta,cyan \"bun run dev:server\" \"bun run dev:web\"",
     "dev:server": "bun run --cwd apps/server dev",
     "dev:web": "bun run --cwd apps/web dev",
+    "dev:desktop": "concurrently -k -n web,desktop -c cyan,magenta \"bun run --cwd apps/web dev\" \"bun run --cwd apps/desktop dev\"",
+    "build:web": "bun run --cwd apps/web build",
+    "build:server:bundle": "bun run --cwd apps/server build:bundle",
+    "build:desktop": "bun run build:web && bun run build:server:bundle && bun run --cwd apps/desktop prepare:resources && bun run --cwd apps/desktop build",
+    "dist:desktop": "bun run build:desktop && bun run --cwd apps/desktop dist",
     "test": "bun test",
     "check": "biome check .",
     "format": "biome format --write ."

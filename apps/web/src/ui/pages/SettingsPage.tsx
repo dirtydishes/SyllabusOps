@@ -15,6 +15,7 @@ import {
   getCodexStatus,
   startCodexChatgptLogin,
 } from "../lib/codex";
+import { isDesktopShell, openAuthUrl } from "../lib/desktop";
 import {
   type NotionStatus,
   clearNotionToken,
@@ -169,12 +170,38 @@ export function SettingsPage() {
     }
   }
 
+  async function pollAuthUntilConnected(
+    kind: "openai" | "codex",
+    timeoutMs = 120_000
+  ) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        if (kind === "openai") {
+          const next = await getOpenAiStatus();
+          setOpenAiStatus(next);
+          if (next.oauthConnected) return;
+        } else {
+          const next = await getCodexStatus();
+          setCodexStatus(next);
+          if (next.connected) return;
+        }
+      } catch {
+        // ignore and keep polling
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+
   async function onConnect() {
     setAuthBusy(true);
     setError(null);
     try {
       const { authUrl } = await startOpenAiOAuth();
-      window.location.href = authUrl;
+      const mode = await openAuthUrl(authUrl);
+      if (mode === "desktop" && isDesktopShell()) {
+        void pollAuthUntilConnected("openai");
+      }
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
     } finally {
@@ -279,7 +306,10 @@ export function SettingsPage() {
     setError(null);
     try {
       const { authUrl } = await startCodexChatgptLogin();
-      window.location.href = authUrl;
+      const mode = await openAuthUrl(authUrl);
+      if (mode === "desktop" && isDesktopShell()) {
+        void pollAuthUntilConnected("codex");
+      }
     } catch (e: unknown) {
       setError(String((e as Error)?.message ?? e));
     } finally {
