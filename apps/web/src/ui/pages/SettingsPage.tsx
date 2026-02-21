@@ -104,6 +104,41 @@ export function SettingsPage() {
     };
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    setOpenAiModelsError(null);
+    setModelsBusy(true);
+    getOpenAiModels()
+      .then((r) => {
+        if (!cancelled) setOpenAiModels(r.models);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled)
+          setOpenAiModelsError(String((e as Error)?.message ?? e));
+      })
+      .finally(() => {
+        if (!cancelled) setModelsBusy(false);
+      });
+
+    setCodexModelsError(null);
+    setCodexModelsBusy(true);
+    getCodexModels()
+      .then((r) => {
+        if (!cancelled) setCodexModels(r.models);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setCodexModelsError(String((e as Error)?.message ?? e));
+      })
+      .finally(() => {
+        if (!cancelled) setCodexModelsBusy(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const hasUnsavedChanges =
     value !== null &&
     savedFingerprint !== null &&
@@ -330,32 +365,6 @@ export function SettingsPage() {
     }
   }
 
-  async function loadModels() {
-    setOpenAiModelsError(null);
-    setModelsBusy(true);
-    try {
-      const r = await getOpenAiModels();
-      setOpenAiModels(r.models);
-    } catch (e: unknown) {
-      setOpenAiModelsError(String((e as Error)?.message ?? e));
-    } finally {
-      setModelsBusy(false);
-    }
-  }
-
-  async function loadCodexModels() {
-    setCodexModelsError(null);
-    setCodexModelsBusy(true);
-    try {
-      const r = await getCodexModels();
-      setCodexModels(r.models);
-    } catch (e: unknown) {
-      setCodexModelsError(String((e as Error)?.message ?? e));
-    } finally {
-      setCodexModelsBusy(false);
-    }
-  }
-
   async function onReset() {
     if (!value) return;
     if (resetConfirm.trim().toUpperCase() !== "RESET") return;
@@ -386,11 +395,17 @@ export function SettingsPage() {
   }
 
   const reasoningEffort = value?.openaiReasoningEffort ?? "";
-  const modelOptions = useMemo(() => {
+  const openAiModelOptions = useMemo(() => {
     const set = new Set(openAiModels);
     if (value?.openaiModel) set.add(value.openaiModel);
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [openAiModels, value?.openaiModel]);
+
+  const codexModelOptions = useMemo(() => {
+    const set = new Set(codexModels.map((m) => m.id));
+    if (value?.codexModel) set.add(value.codexModel);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [codexModels, value?.codexModel]);
 
   const codexSelected = value?.codexModel ?? "";
   const codexSelectedModel = useMemo(
@@ -575,31 +590,26 @@ export function SettingsPage() {
 
         <div className="field" style={{ marginTop: 12 }}>
           <label htmlFor="codexModel">Model</label>
-          <div className="row" style={{ gap: 10 }}>
-            <input
-              id="codexModel"
-              className="input mono"
-              value={value?.codexModel ?? ""}
-              onChange={(e) =>
-                setValue((v) => (v ? { ...v, codexModel: e.target.value } : v))
-              }
-              placeholder="gpt-5.2-codex"
-              list="codex-models"
-            />
-            <button
-              type="button"
-              className="button"
-              disabled={codexModelsBusy}
-              onClick={() => void loadCodexModels()}
-            >
-              {codexModelsBusy ? "Loading…" : "Load models"}
-            </button>
-          </div>
-          <datalist id="codex-models">
-            {codexModels.map((m) => (
-              <option key={m.id} value={m.id} />
+          <select
+            id="codexModel"
+            className="input mono"
+            value={value?.codexModel ?? ""}
+            onChange={(e) =>
+              setValue((v) => (v ? { ...v, codexModel: e.target.value } : v))
+            }
+          >
+            <option value="">Select a model</option>
+            {codexModelOptions.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
             ))}
-          </datalist>
+          </select>
+          {codexModelsBusy ? (
+            <div className="muted" style={{ marginTop: 6 }}>
+              Loading models…
+            </div>
+          ) : null}
           {codexSelectedModel?.description ? (
             <div className="muted" style={{ marginTop: 6 }}>
               {codexSelectedModel.description}
@@ -696,31 +706,26 @@ export function SettingsPage() {
 
         <div className="field">
           <label htmlFor="openaiModel">Model</label>
-          <div className="row" style={{ gap: 10 }}>
-            <input
-              id="openaiModel"
-              className="input mono"
-              value={value?.openaiModel ?? ""}
-              onChange={(e) =>
-                setValue((v) => (v ? { ...v, openaiModel: e.target.value } : v))
-              }
-              placeholder="gpt-4o-mini"
-              list="openai-models"
-            />
-            <button
-              type="button"
-              className="button"
-              disabled={modelsBusy}
-              onClick={() => void loadModels()}
-            >
-              {modelsBusy ? "Loading…" : "Load models"}
-            </button>
-          </div>
-          <datalist id="openai-models">
-            {modelOptions.map((m) => (
-              <option key={m} value={m} />
+          <select
+            id="openaiModel"
+            className="input mono"
+            value={value?.openaiModel ?? ""}
+            onChange={(e) =>
+              setValue((v) => (v ? { ...v, openaiModel: e.target.value } : v))
+            }
+          >
+            <option value="">Select a model</option>
+            {openAiModelOptions.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
             ))}
-          </datalist>
+          </select>
+          {modelsBusy ? (
+            <div className="muted" style={{ marginTop: 6 }}>
+              Loading models…
+            </div>
+          ) : null}
           {openAiModelsError ? (
             <div className="muted" style={{ marginTop: 6 }}>
               Models error: {openAiModelsError}
